@@ -97,7 +97,7 @@ export function Sidebar() {
               <div className="flex-1 min-w-0">
                 <div className="font-medium truncate">{item.name}</div>
                 <div className="text-xs text-slate-400">
-                  {item.weight} kg × {item.quantity}
+                  {item.weight ? `${item.weight} kg × ${item.quantity}` : `Qty: ${item.quantity}`}
                 </div>
               </div>
               <button

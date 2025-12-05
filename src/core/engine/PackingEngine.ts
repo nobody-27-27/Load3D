@@ -81,7 +81,7 @@ export class PackingEngine {
       placedItems,
       unplacedItems,
       utilizationPercent: containerVol > 0 ? (itemsVol / containerVol) * 100 : 0,
-      totalWeight: placedItems.reduce((acc, p) => acc + p.item.weight, 0),
+      totalWeight: placedItems.reduce((acc, p) => acc + (p.item.weight || 0), 0),
       executionTime: endTime - startTime,
     };
   }

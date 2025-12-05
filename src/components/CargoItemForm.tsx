@@ -18,15 +18,15 @@ interface CargoItemFormProps {
 export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
   const [itemType, setItemType] = useState<CargoType>('box');
   const [name, setName] = useState('');
-  const [weight, setWeight] = useState('100');
+  const [weight, setWeight] = useState('');
   const [quantity, setQuantity] = useState('1');
 
-  const [length, setLength] = useState('1.2');
-  const [width, setWidth] = useState('0.8');
-  const [height, setHeight] = useState('1.0');
+  const [length, setLength] = useState('120');
+  const [width, setWidth] = useState('80');
+  const [height, setHeight] = useState('100');
 
-  const [diameter, setDiameter] = useState('0.5');
-  const [rollLength, setRollLength] = useState('2.0');
+  const [diameter, setDiameter] = useState('50');
+  const [rollLength, setRollLength] = useState('200');
 
   const [color, setColor] = useState('');
   const [stackable, setStackable] = useState(false);
@@ -50,9 +50,11 @@ export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
       newErrors.push(nameValidation.error!);
     }
 
-    const weightValidation = validateWeight(parseFloat(weight));
-    if (!weightValidation.isValid) {
-      newErrors.push(weightValidation.error!);
+    if (weight) {
+      const weightValidation = validateWeight(parseFloat(weight));
+      if (!weightValidation.isValid) {
+        newErrors.push(weightValidation.error!);
+      }
     }
 
     const quantityValidation = validateQuantity(parseInt(quantity));
@@ -62,17 +64,17 @@ export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
 
     if (itemType === 'box') {
       const dimensionsValidation = validateDimensions(
-        parseFloat(length),
-        parseFloat(width),
-        parseFloat(height)
+        parseFloat(length) / 100,
+        parseFloat(width) / 100,
+        parseFloat(height) / 100
       );
       if (!dimensionsValidation.isValid) {
         newErrors.push(dimensionsValidation.error!);
       }
     } else if (itemType === 'roll') {
       const rollValidation = validateRollDimensions(
-        parseFloat(diameter),
-        parseFloat(rollLength)
+        parseFloat(diameter) / 100,
+        parseFloat(rollLength) / 100
       );
       if (!rollValidation.isValid) {
         newErrors.push(rollValidation.error!);
@@ -97,23 +99,26 @@ export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
       id: itemId,
       type: itemType,
       name: name.trim(),
-      weight: parseFloat(weight),
       quantity: parseInt(quantity),
       stackable,
       isPalletized,
       color: selectedColor,
     };
 
+    if (weight) {
+      newItem.weight = parseFloat(weight);
+    }
+
     if (itemType === 'box') {
       newItem.dimensions = {
-        length: parseFloat(length),
-        width: parseFloat(width),
-        height: parseFloat(height),
+        length: parseFloat(length) / 100,
+        width: parseFloat(width) / 100,
+        height: parseFloat(height) / 100,
       };
     } else if (itemType === 'roll') {
       newItem.rollDimensions = {
-        diameter: parseFloat(diameter),
-        length: parseFloat(rollLength),
+        diameter: parseFloat(diameter) / 100,
+        length: parseFloat(rollLength) / 100,
       };
     }
 
@@ -123,13 +128,13 @@ export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
 
   const resetForm = () => {
     setName('');
-    setWeight('100');
+    setWeight('');
     setQuantity('1');
-    setLength('1.2');
-    setWidth('0.8');
-    setHeight('1.0');
-    setDiameter('0.5');
-    setRollLength('2.0');
+    setLength('120');
+    setWidth('80');
+    setHeight('100');
+    setDiameter('50');
+    setRollLength('200');
     setColor('');
     setStackable(false);
     setIsPalletized(false);
@@ -189,12 +194,12 @@ export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
 
         {itemType === 'box' && (
           <div>
-            <label className="block text-sm font-medium mb-2">Dimensions (meters)</label>
+            <label className="block text-sm font-medium mb-2">Dimensions (cm)</label>
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.1"
                   value={length}
                   onChange={(e) => setLength(e.target.value)}
                   placeholder="Length"
@@ -205,7 +210,7 @@ export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
               <div>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.1"
                   value={width}
                   onChange={(e) => setWidth(e.target.value)}
                   placeholder="Width"
@@ -216,7 +221,7 @@ export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
               <div>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.1"
                   value={height}
                   onChange={(e) => setHeight(e.target.value)}
                   placeholder="Height"
@@ -230,12 +235,12 @@ export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
 
         {itemType === 'roll' && (
           <div>
-            <label className="block text-sm font-medium mb-2">Dimensions (meters)</label>
+            <label className="block text-sm font-medium mb-2">Dimensions (cm)</label>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.1"
                   value={diameter}
                   onChange={(e) => setDiameter(e.target.value)}
                   placeholder="Diameter"
@@ -246,7 +251,7 @@ export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
               <div>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.1"
                   value={rollLength}
                   onChange={(e) => setRollLength(e.target.value)}
                   placeholder="Length"
@@ -260,13 +265,15 @@ export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
 
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="block text-sm font-medium mb-2">Weight (kg)</label>
+            <label className="block text-sm font-medium mb-2">
+              Weight (kg) <span className="text-slate-400 font-normal">(optional)</span>
+            </label>
             <input
               type="number"
               step="0.1"
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
-              placeholder="100"
+              placeholder="Optional"
               className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
             />
           </div>

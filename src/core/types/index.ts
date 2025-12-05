@@ -36,7 +36,7 @@ export interface ICargoItem {
   id: string;
   type: CargoType;
   name: string;
-  weight: number;
+  weight?: number;
   quantity: number;
   dimensions?: IDimensions;
   rollDimensions?: IRollDimensions;
