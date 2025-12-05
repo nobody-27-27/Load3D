@@ -11,9 +11,18 @@ export class PalletStrategy implements IPackingStrategy {
     const itemDims = item.dimensions;
     if (!itemDims) return null;
 
+    let baseDims = itemDims;
+    if (item.palletDimensions) {
+      baseDims = {
+        length: item.palletDimensions.length,
+        width: item.palletDimensions.width,
+        height: itemDims.height + item.palletDimensions.height
+      };
+    }
+
     const orientations = [
-      { rotation: 0, dimensions: itemDims },
-      { rotation: 90, dimensions: { length: itemDims.width, width: itemDims.length, height: itemDims.height } }
+      { rotation: 0, dimensions: baseDims },
+      { rotation: 90, dimensions: { length: baseDims.width, width: baseDims.length, height: baseDims.height } }
     ];
 
     const step = 0.5;

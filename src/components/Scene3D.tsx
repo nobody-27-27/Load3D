@@ -44,9 +44,51 @@ function PlacedItems() {
   return (
     <group>
       {loadingResult.placedItems.map((placedItem) => {
-        const { length, width, height } = placedItem.dimensions;
         const { x, y, z } = placedItem.position;
+        const hasPallet = placedItem.item.palletDimensions !== undefined;
 
+        if (hasPallet) {
+          const palletDims = placedItem.item.palletDimensions!;
+          const itemDims = placedItem.item.dimensions ||
+                          (placedItem.item.rollDimensions
+                            ? {
+                                length: placedItem.item.rollDimensions.diameter,
+                                width: placedItem.item.rollDimensions.diameter,
+                                height: placedItem.item.rollDimensions.length
+                              }
+                            : { length: 1, width: 1, height: 1 });
+
+          return (
+            <group key={placedItem.itemId}>
+              <Box
+                args={[palletDims.length, palletDims.height, palletDims.width]}
+                position={[x + palletDims.length / 2, y + palletDims.height / 2, z + palletDims.width / 2]}
+              >
+                <meshStandardMaterial
+                  color="#8B4513"
+                  roughness={0.8}
+                  metalness={0.2}
+                />
+              </Box>
+              <Box
+                args={[itemDims.length, itemDims.height, itemDims.width]}
+                position={[
+                  x + (palletDims.length / 2),
+                  y + palletDims.height + itemDims.height / 2,
+                  z + (palletDims.width / 2)
+                ]}
+              >
+                <meshStandardMaterial
+                  color={placedItem.item.color || '#10b981'}
+                  transparent
+                  opacity={0.8}
+                />
+              </Box>
+            </group>
+          );
+        }
+
+        const { length, width, height } = placedItem.dimensions;
         return (
           <Box
             key={placedItem.itemId}

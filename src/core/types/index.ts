@@ -32,6 +32,12 @@ export interface IRollDimensions {
   length: number;
 }
 
+export interface IPalletDimensions {
+  length: number;
+  width: number;
+  height: number;
+}
+
 export interface ICargoItem {
   id: string;
   type: CargoType;
@@ -43,6 +49,7 @@ export interface ICargoItem {
   stackable?: boolean;
   fragile?: boolean;
   isPalletized?: boolean;
+  palletDimensions?: IPalletDimensions;
   color?: string;
 }
 

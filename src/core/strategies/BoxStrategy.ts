@@ -18,7 +18,7 @@ export class BoxStrategy implements IPackingStrategy {
 
     const cornerPoints = this.generateCornerPoints(placedItems, container.dimensions);
 
-    const orientations = this.getOrientations(itemDims);
+    const orientations = this.getOrientations(itemDims, item.palletDimensions);
 
     for (const corner of cornerPoints) {
       for (const orientation of orientations) {
@@ -99,7 +99,25 @@ export class BoxStrategy implements IPackingStrategy {
     return false;
   }
 
-  private getOrientations(dims: IDimensions): Array<{ rotation: number; dimensions: IDimensions }> {
+  private getOrientations(dims: IDimensions, palletDims?: IDimensions): Array<{ rotation: number; dimensions: IDimensions }> {
+    if (palletDims) {
+      const totalHeight = dims.height + palletDims.height;
+      const allOrientations = [
+        { rotation: 0, dimensions: { length: palletDims.length, width: palletDims.width, height: totalHeight } },
+        { rotation: 90, dimensions: { length: palletDims.width, width: palletDims.length, height: totalHeight } }
+      ];
+
+      const seen = new Set<string>();
+      const uniqueOrientations = allOrientations.filter((o) => {
+        const key = `${o.dimensions.length},${o.dimensions.width},${o.dimensions.height}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      return uniqueOrientations;
+    }
+
     const allOrientations = [
       { rotation: 0, dimensions: { length: dims.length, width: dims.width, height: dims.height } },
       { rotation: 0, dimensions: { length: dims.length, width: dims.height, height: dims.width } },

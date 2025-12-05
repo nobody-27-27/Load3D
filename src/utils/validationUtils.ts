@@ -60,3 +60,36 @@ export function validateQuantity(quantity: number): ValidationResult {
 export function validateName(name: string): ValidationResult {
   return { isValid: true };
 }
+
+export function validatePalletDimensions(
+  palletLength: number,
+  palletWidth: number,
+  palletHeight: number,
+  itemLength: number,
+  itemWidth: number
+): ValidationResult {
+  const lengthCheck = validatePositiveNumber(palletLength, 'Pallet length');
+  if (!lengthCheck.isValid) return lengthCheck;
+
+  const widthCheck = validatePositiveNumber(palletWidth, 'Pallet width');
+  if (!widthCheck.isValid) return widthCheck;
+
+  const heightCheck = validatePositiveNumber(palletHeight, 'Pallet height');
+  if (!heightCheck.isValid) return heightCheck;
+
+  if (palletLength < itemLength) {
+    return {
+      isValid: false,
+      error: 'Pallet length must be at least as large as item length',
+    };
+  }
+
+  if (palletWidth < itemWidth) {
+    return {
+      isValid: false,
+      error: 'Pallet width must be at least as large as item width',
+    };
+  }
+
+  return { isValid: true };
+}

@@ -20,6 +20,14 @@ export class RollStrategy implements IPackingStrategy {
         return null;
     }
 
+    if (item.palletDimensions) {
+        dims = {
+            length: item.palletDimensions.length,
+            width: item.palletDimensions.width,
+            height: dims.height + item.palletDimensions.height
+        };
+    }
+
     const step = 0.5;
     const maxX = container.dimensions.length - dims.length;
     const maxZ = container.dimensions.width - dims.width;

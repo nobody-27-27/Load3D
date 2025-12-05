@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Package, Cylinder, Plus, X } from 'lucide-react';
 import type { CargoType, ICargoItem } from '../core/types';
 import { getRandomColor, CARGO_COLOR_PALETTE } from '../utils/colorUtils';
@@ -8,6 +8,7 @@ import {
   validateQuantity,
   validateDimensions,
   validateRollDimensions,
+  validatePalletDimensions,
 } from '../utils/validationUtils';
 
 interface CargoItemFormProps {
@@ -32,6 +33,10 @@ export function CargoItemForm({ onAdd, onCancel, existingItems }: CargoItemFormP
   const [color, setColor] = useState('');
   const [isPalletized, setIsPalletized] = useState(false);
 
+  const [palletLength, setPalletLength] = useState('120');
+  const [palletWidth, setPalletWidth] = useState('80');
+  const [palletHeight, setPalletHeight] = useState('15');
+
   const [errors, setErrors] = useState<string[]>([]);
 
   const generateAutoName = (type: CargoType): string => {
@@ -39,6 +44,18 @@ export function CargoItemForm({ onAdd, onCancel, existingItems }: CargoItemFormP
     const count = itemsOfType.length + 1;
     return `${type}-${count}`;
   };
+
+  useEffect(() => {
+    if (isPalletized) {
+      if (itemType === 'box') {
+        setPalletLength(length);
+        setPalletWidth(width);
+      } else if (itemType === 'roll') {
+        setPalletLength(diameter);
+        setPalletWidth(diameter);
+      }
+    }
+  }, [isPalletized, itemType, length, width, diameter]);
 
   const handleTypeChange = (type: CargoType) => {
     setItemType(type);
@@ -74,6 +91,19 @@ export function CargoItemForm({ onAdd, onCancel, existingItems }: CargoItemFormP
       if (!dimensionsValidation.isValid) {
         newErrors.push(dimensionsValidation.error!);
       }
+
+      if (isPalletized) {
+        const palletValidation = validatePalletDimensions(
+          parseFloat(palletLength) / 100,
+          parseFloat(palletWidth) / 100,
+          parseFloat(palletHeight) / 100,
+          parseFloat(length) / 100,
+          parseFloat(width) / 100
+        );
+        if (!palletValidation.isValid) {
+          newErrors.push(palletValidation.error!);
+        }
+      }
     } else if (itemType === 'roll') {
       const rollValidation = validateRollDimensions(
         parseFloat(diameter) / 100,
@@ -81,6 +111,19 @@ export function CargoItemForm({ onAdd, onCancel, existingItems }: CargoItemFormP
       );
       if (!rollValidation.isValid) {
         newErrors.push(rollValidation.error!);
+      }
+
+      if (isPalletized) {
+        const palletValidation = validatePalletDimensions(
+          parseFloat(palletLength) / 100,
+          parseFloat(palletWidth) / 100,
+          parseFloat(palletHeight) / 100,
+          parseFloat(diameter) / 100,
+          parseFloat(diameter) / 100
+        );
+        if (!palletValidation.isValid) {
+          newErrors.push(palletValidation.error!);
+        }
       }
     }
 
@@ -125,6 +168,14 @@ export function CargoItemForm({ onAdd, onCancel, existingItems }: CargoItemFormP
       };
     }
 
+    if (isPalletized) {
+      newItem.palletDimensions = {
+        length: parseFloat(palletLength) / 100,
+        width: parseFloat(palletWidth) / 100,
+        height: parseFloat(palletHeight) / 100,
+      };
+    }
+
     onAdd(newItem);
     resetForm();
   };
@@ -140,6 +191,9 @@ export function CargoItemForm({ onAdd, onCancel, existingItems }: CargoItemFormP
     setRollLength('200');
     setColor('');
     setIsPalletized(false);
+    setPalletLength('120');
+    setPalletWidth('80');
+    setPalletHeight('15');
     setErrors([]);
   };
 
@@ -333,6 +387,52 @@ export function CargoItemForm({ onAdd, onCancel, existingItems }: CargoItemFormP
             <span className="text-sm">Palletized (can only be placed on ground)</span>
           </label>
         </div>
+
+        {isPalletized && (
+          <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-600">
+            <label className="block text-sm font-medium mb-2">
+              Pallet Dimensions (cm)
+              <span className="text-slate-400 font-normal text-xs ml-2">
+                (pallet is placed underneath the item)
+              </span>
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={palletLength}
+                  onChange={(e) => setPalletLength(e.target.value)}
+                  placeholder="Length"
+                  className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                />
+                <span className="text-xs text-slate-400 mt-1 block">L</span>
+              </div>
+              <div>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={palletWidth}
+                  onChange={(e) => setPalletWidth(e.target.value)}
+                  placeholder="Width"
+                  className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                />
+                <span className="text-xs text-slate-400 mt-1 block">W</span>
+              </div>
+              <div>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={palletHeight}
+                  onChange={(e) => setPalletHeight(e.target.value)}
+                  placeholder="Height"
+                  className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                />
+                <span className="text-xs text-slate-400 mt-1 block">H</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {errors.length > 0 && (
           <div className="bg-red-500/10 border border-red-500 rounded-lg p-3">
