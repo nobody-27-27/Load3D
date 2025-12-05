@@ -11,25 +11,25 @@ export class PalletStrategy implements IPackingStrategy {
     const itemDims = item.dimensions;
     if (!itemDims) return null;
 
+    const orientations = [
+      { rotation: 0, dimensions: itemDims },
+      { rotation: 90, dimensions: { length: itemDims.width, width: itemDims.length, height: itemDims.height } }
+    ];
+
     const step = 10;
 
-    for (let x = 0; x <= container.dimensions.length - itemDims.length; x += step) {
-      for (let z = 0; z <= container.dimensions.width - itemDims.width; z += step) {
-
+    for (let x = 0; x <= container.dimensions.length; x += step) {
+      for (let z = 0; z <= container.dimensions.width; z += step) {
         const candidatePos = { x, y: 0, z };
 
-        if (this.canPlaceAt(item, candidatePos, 0, context)) {
-          return { position: candidatePos, rotation: 0, dimensions: itemDims };
-        }
-
-        if (itemDims.length !== itemDims.width) {
-           if (this.canPlaceAt(item, candidatePos, 90, context)) {
-             return {
-               position: candidatePos,
-               rotation: 90,
-               dimensions: GeometryUtils.rotateDimensions(itemDims, 90)
-             };
-           }
+        for (const orientation of orientations) {
+          if (this.canPlaceAt(candidatePos, orientation.dimensions, context)) {
+            return {
+              position: candidatePos,
+              rotation: orientation.rotation,
+              dimensions: orientation.dimensions
+            };
+          }
         }
       }
     }
@@ -38,24 +38,19 @@ export class PalletStrategy implements IPackingStrategy {
   }
 
   canPlaceAt(
-    item: ICargoItem,
     position: IVector3,
-    rotation: number,
+    dimensions: IDimensions,
     context: IPackingContext
   ): boolean {
     const { container, placedItems } = context;
-    const itemDims = item.dimensions;
-    if (!itemDims) return false;
 
-    const currentDims = GeometryUtils.rotateDimensions(itemDims, rotation);
-
-    if (!GeometryUtils.isWithinBounds(position, currentDims, container.dimensions)) {
+    if (!GeometryUtils.isWithinBounds(position, dimensions, container.dimensions)) {
       return false;
     }
 
     for (const other of placedItems) {
       if (GeometryUtils.checkIntersection(
-        position, currentDims,
+        position, dimensions,
         other.position, other.dimensions
       )) {
         return false;

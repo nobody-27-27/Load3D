@@ -22,7 +22,7 @@ export class BoxStrategy implements IPackingStrategy {
 
     for (const corner of cornerPoints) {
       for (const orientation of orientations) {
-        if (this.canPlaceAt(item, corner.position, orientation.rotation, context)) {
+        if (this.canPlaceAt(item, corner.position, orientation.dimensions, context)) {
           return {
             position: corner.position,
             rotation: orientation.rotation,
@@ -101,54 +101,54 @@ export class BoxStrategy implements IPackingStrategy {
 
   private getOrientations(dims: IDimensions): Array<{ rotation: number; dimensions: IDimensions }> {
     const orientations = [
-      { rotation: 0, dimensions: dims },
+      { rotation: 0, dimensions: { length: dims.length, width: dims.width, height: dims.height } },
       { rotation: 90, dimensions: { length: dims.width, width: dims.length, height: dims.height } }
     ];
 
-    if (dims.length !== dims.height) {
-      orientations.push({
-        rotation: 180,
-        dimensions: { length: dims.height, width: dims.width, height: dims.length }
-      });
+    const uniqueDimensions = new Set([dims.length, dims.width, dims.height]);
+    if (uniqueDimensions.size > 1) {
+      orientations.push(
+        { rotation: 0, dimensions: { length: dims.length, width: dims.height, height: dims.width } },
+        { rotation: 90, dimensions: { length: dims.height, width: dims.length, height: dims.width } },
+        { rotation: 0, dimensions: { length: dims.height, width: dims.width, height: dims.length } },
+        { rotation: 90, dimensions: { length: dims.width, width: dims.height, height: dims.length } }
+      );
     }
 
-    if (dims.width !== dims.height && dims.width !== dims.length) {
-      orientations.push({
-        rotation: 270,
-        dimensions: { length: dims.width, width: dims.height, height: dims.length }
-      });
-    }
+    const seen = new Set<string>();
+    const filtered = orientations.filter((o) => {
+      const key = `${o.dimensions.length},${o.dimensions.width},${o.dimensions.height}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
-    orientations.sort((a, b) => {
+    filtered.sort((a, b) => {
       const areaA = a.dimensions.length * a.dimensions.width;
       const areaB = b.dimensions.length * b.dimensions.width;
       return areaB - areaA;
     });
 
-    return orientations;
+    return filtered;
   }
 
   canPlaceAt(
     item: ICargoItem,
     position: IVector3,
-    rotation: number,
+    dimensions: IDimensions,
     context: IPackingContext
   ): boolean {
     const { container, placedItems } = context;
-    const itemDims = item.dimensions;
-    if (!itemDims) return false;
 
-    const currentDims = GeometryUtils.rotateDimensions(itemDims, rotation);
-
-    if (!GeometryUtils.isWithinBounds(position, currentDims, container.dimensions)) return false;
+    if (!GeometryUtils.isWithinBounds(position, dimensions, container.dimensions)) return false;
 
     for (const other of placedItems) {
-      if (GeometryUtils.checkIntersection(position, currentDims, other.position, other.dimensions)) {
+      if (GeometryUtils.checkIntersection(position, dimensions, other.position, other.dimensions)) {
         return false;
       }
     }
 
-    if (position.y > 0.01 && !this.hasSupport(position, currentDims, placedItems)) {
+    if (position.y > 0.01 && !this.hasSupport(position, dimensions, placedItems)) {
       return false;
     }
 
