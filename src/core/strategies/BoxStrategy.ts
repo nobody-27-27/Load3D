@@ -139,6 +139,10 @@ export class BoxStrategy implements IPackingStrategy {
 
     if (!GeometryUtils.isWithinBounds(position, dimensions, container.dimensions)) return false;
 
+    if (item.isPalletized && position.y > 0.01) {
+      return false;
+    }
+
     for (const other of placedItems) {
       if (GeometryUtils.checkIntersection(position, dimensions, other.position, other.dimensions)) {
         return false;

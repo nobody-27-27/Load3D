@@ -30,7 +30,7 @@ export class RollStrategy implements IPackingStrategy {
       for (let z = 0; z <= maxZ; z += step) {
           const pos = { x, y: 0, z };
 
-          if (this.canPlaceAt(pos, dims, context)) {
+          if (this.canPlaceAt(item, pos, dims, context)) {
               return {
                   position: pos,
                   rotation: 0,
@@ -44,8 +44,12 @@ export class RollStrategy implements IPackingStrategy {
     return null;
   }
 
-  canPlaceAt(pos: IVector3, dims: IDimensions, context: IPackingContext): boolean {
+  canPlaceAt(item: ICargoItem, pos: IVector3, dims: IDimensions, context: IPackingContext): boolean {
       if (!GeometryUtils.isWithinBounds(pos, dims, context.container.dimensions)) return false;
+
+      if (item.isPalletized && pos.y > 0.01) {
+        return false;
+      }
 
       for (const other of context.placedItems) {
           if (GeometryUtils.checkIntersection(pos, dims, other.position, other.dimensions)) return false;

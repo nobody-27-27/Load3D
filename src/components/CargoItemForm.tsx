@@ -30,7 +30,6 @@ export function CargoItemForm({ onAdd, onCancel, existingItems }: CargoItemFormP
   const [rollLength, setRollLength] = useState('200');
 
   const [color, setColor] = useState('');
-  const [stackable, setStackable] = useState(false);
   const [isPalletized, setIsPalletized] = useState(false);
 
   const [errors, setErrors] = useState<string[]>([]);
@@ -105,7 +104,6 @@ export function CargoItemForm({ onAdd, onCancel, existingItems }: CargoItemFormP
       type: itemType,
       name: finalName,
       quantity: parseInt(quantity),
-      stackable,
       isPalletized,
       color: selectedColor,
     };
@@ -141,7 +139,6 @@ export function CargoItemForm({ onAdd, onCancel, existingItems }: CargoItemFormP
     setDiameter('50');
     setRollLength('200');
     setColor('');
-    setStackable(false);
     setIsPalletized(false);
     setErrors([]);
   };
@@ -329,20 +326,11 @@ export function CargoItemForm({ onAdd, onCancel, existingItems }: CargoItemFormP
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={stackable}
-              onChange={(e) => setStackable(e.target.checked)}
-              className="w-4 h-4 rounded bg-slate-800 border-slate-600 text-blue-500 focus:ring-blue-500"
-            />
-            <span className="text-sm">Stackable</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
               checked={isPalletized}
               onChange={(e) => setIsPalletized(e.target.checked)}
               className="w-4 h-4 rounded bg-slate-800 border-slate-600 text-blue-500 focus:ring-blue-500"
             />
-            <span className="text-sm">Palletized</span>
+            <span className="text-sm">Palletized (can only be placed on ground)</span>
           </label>
         </div>
 

@@ -28,7 +28,7 @@ export class PalletStrategy implements IPackingStrategy {
         for (let z = 0; z <= maxZ; z += step) {
           const candidatePos = { x, y: 0, z };
 
-          if (this.canPlaceAt(candidatePos, orientation.dimensions, context)) {
+          if (this.canPlaceAt(item, candidatePos, orientation.dimensions, context)) {
             return {
               position: candidatePos,
               rotation: orientation.rotation,
@@ -43,6 +43,7 @@ export class PalletStrategy implements IPackingStrategy {
   }
 
   canPlaceAt(
+    item: ICargoItem,
     position: IVector3,
     dimensions: IDimensions,
     context: IPackingContext
@@ -50,6 +51,10 @@ export class PalletStrategy implements IPackingStrategy {
     const { container, placedItems } = context;
 
     if (!GeometryUtils.isWithinBounds(position, dimensions, container.dimensions)) {
+      return false;
+    }
+
+    if (item.isPalletized && position.y > 0.01) {
       return false;
     }
 
