@@ -1,4 +1,4 @@
-import type { ICargoItem, IContainer, ILoadingResult, IPlacedItem } from '../types';
+import type { ICargoItem, IContainer, ILoadingResult, IPlacedItem, IPackingContext } from '../types';
 import { BoxStrategy } from '../strategies/BoxStrategy';
 import { RollStrategy } from '../strategies/RollStrategy';
 import { PalletStrategy } from '../strategies/PalletStrategy';
@@ -31,15 +31,49 @@ export class PackingEngine {
   run(items: ICargoItem[], container: IContainer): ILoadingResult {
     const startTime = performance.now();
     const placedItems: IPlacedItem[] = [];
-    const unplacedItems: ICargoItem[] = [...items];
+    const unplacedItems: ICargoItem[] = [];
+
+    const sortedItems = [...items].sort((a, b) => {
+        const volA = (a.dimensions?.length || 0) * (a.dimensions?.width || 0);
+        const volB = (b.dimensions?.length || 0) * (b.dimensions?.width || 0);
+        return volB - volA;
+    });
+
+    for (const item of sortedItems) {
+      const strategy = this.getStrategy(item.type);
+
+      const context: IPackingContext = {
+        container,
+        placedItems,
+        activeLayer: { zStart: 0, zEnd: 0, occupiedSpaces: [] }
+      };
+
+      const result = strategy.findBestPosition(item, context);
+
+      if (result) {
+        placedItems.push({
+          itemId: item.id,
+          item: item,
+          position: result.position,
+          rotation: result.rotation,
+          dimensions: result.dimensions || item.dimensions!,
+          orientation: result.orientation as any || 'horizontal'
+        });
+      } else {
+        unplacedItems.push(item);
+      }
+    }
 
     const endTime = performance.now();
+
+    const containerVol = container.dimensions.length * container.dimensions.width * container.dimensions.height;
+    const itemsVol = placedItems.reduce((acc, p) => acc + (p.dimensions.length * p.dimensions.width * p.dimensions.height), 0);
 
     return {
       placedItems,
       unplacedItems,
-      utilizationPercent: 0,
-      totalWeight: 0,
+      utilizationPercent: containerVol > 0 ? (itemsVol / containerVol) * 100 : 0,
+      totalWeight: placedItems.reduce((acc, p) => acc + p.item.weight, 0),
       executionTime: endTime - startTime,
     };
   }
