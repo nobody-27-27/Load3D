@@ -2,9 +2,12 @@ import { useState } from 'react';
 import { Box, Package, Cylinder, Play, Trash2 } from 'lucide-react';
 import { useLoadingStore } from '../store/useLoadingStore';
 import type { ICargoItem, CargoType } from '../core/types';
+import { ContainerSelector } from './ContainerSelector';
+import { ContainerEditor } from './ContainerEditor';
 
 export function Sidebar() {
   const {
+    container,
     cargoItems,
     setCargoItems,
     startCalculation,
@@ -63,20 +66,10 @@ export function Sidebar() {
       <h1 className="text-2xl font-bold mb-6">3D Container Loading</h1>
 
       <div className="mb-6">
-        <h2 className="text-lg font-semibold mb-3">Container Info</h2>
-        <div className="bg-slate-700 rounded-lg p-4 space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-slate-400">Type:</span>
-            <span>40ft Container</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">Dimensions:</span>
-            <span>12m × 2.4m × 2.4m</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">Max Weight:</span>
-            <span>26,000 kg</span>
-          </div>
+        <h2 className="text-lg font-semibold mb-3">Container</h2>
+        <div className="bg-slate-700 rounded-lg p-4 space-y-4">
+          <ContainerSelector />
+          <ContainerEditor />
         </div>
       </div>
 

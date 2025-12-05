@@ -2,6 +2,19 @@ export type CargoType = 'box' | 'roll' | 'pallet';
 
 export type RollOrientation = 'vertical' | 'horizontal';
 
+export type ContainerPresetType = '20DC' | '40DC' | '40HC' | 'TRUCK';
+
+export interface IContainerPreset {
+  id: string;
+  name: string;
+  type: ContainerPresetType;
+  length: number;
+  width: number;
+  height: number;
+  maxWeight: number;
+  isDefault: boolean;
+}
+
 export interface IVector3 {
   x: number;
   y: number;
