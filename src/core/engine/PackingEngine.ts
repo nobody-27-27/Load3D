@@ -33,7 +33,18 @@ export class PackingEngine {
     const placedItems: IPlacedItem[] = [];
     const unplacedItems: ICargoItem[] = [];
 
-    const sortedItems = [...items].sort((a, b) => {
+    const expandedItems: ICargoItem[] = [];
+    for (const item of items) {
+      for (let i = 0; i < item.quantity; i++) {
+        expandedItems.push({
+          ...item,
+          id: `${item.id}-${i}`,
+          quantity: 1,
+        });
+      }
+    }
+
+    const sortedItems = expandedItems.sort((a, b) => {
         const getVol = (i: ICargoItem) => {
             if (i.rollDimensions) {
                 const r = i.rollDimensions.diameter / 2;
