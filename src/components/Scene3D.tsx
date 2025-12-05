@@ -49,20 +49,17 @@ function PlacedItems() {
 
         if (hasPallet) {
           const palletDims = placedItem.item.palletDimensions!;
-          const itemDims = placedItem.item.dimensions ||
-                          (placedItem.item.rollDimensions
-                            ? {
-                                length: placedItem.item.rollDimensions.diameter,
-                                width: placedItem.item.rollDimensions.diameter,
-                                height: placedItem.item.rollDimensions.length
-                              }
-                            : { length: 1, width: 1, height: 1 });
+          const totalDims = placedItem.dimensions;
+
+          const palletFootprintLength = totalDims.length;
+          const palletFootprintWidth = totalDims.width;
+          const itemHeight = totalDims.height - palletDims.height;
 
           return (
             <group key={placedItem.itemId}>
               <Box
-                args={[palletDims.length, palletDims.height, palletDims.width]}
-                position={[x + palletDims.length / 2, y + palletDims.height / 2, z + palletDims.width / 2]}
+                args={[palletFootprintLength, palletDims.height, palletFootprintWidth]}
+                position={[x + palletFootprintLength / 2, y + palletDims.height / 2, z + palletFootprintWidth / 2]}
               >
                 <meshStandardMaterial
                   color="#8B4513"
@@ -71,11 +68,11 @@ function PlacedItems() {
                 />
               </Box>
               <Box
-                args={[itemDims.length, itemDims.height, itemDims.width]}
+                args={[palletFootprintLength, itemHeight, palletFootprintWidth]}
                 position={[
-                  x + (palletDims.length / 2),
-                  y + palletDims.height + itemDims.height / 2,
-                  z + (palletDims.width / 2)
+                  x + palletFootprintLength / 2,
+                  y + palletDims.height + itemHeight / 2,
+                  z + palletFootprintWidth / 2
                 ]}
               >
                 <meshStandardMaterial
