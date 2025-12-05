@@ -16,6 +16,9 @@ interface LoadingStore {
 
   setContainer: (container: IContainer) => void;
   setCargoItems: (items: ICargoItem[]) => void;
+  addCargoItem: (item: ICargoItem) => void;
+  removeCargoItem: (id: string) => void;
+  updateCargoItem: (id: string, updates: Partial<ICargoItem>) => void;
   startCalculation: () => Promise<void>;
   resetCalculation: () => void;
   loadContainerPresets: () => Promise<void>;
@@ -47,6 +50,26 @@ export const useLoadingStore = create<LoadingStore>((set, get) => ({
   setContainer: (container) => set({ container }),
 
   setCargoItems: (items) => set({ cargoItems: items }),
+
+  addCargoItem: (item) => {
+    const { cargoItems } = get();
+    set({ cargoItems: [...cargoItems, item], loadingResult: null });
+  },
+
+  removeCargoItem: (id) => {
+    const { cargoItems } = get();
+    set({ cargoItems: cargoItems.filter((item) => item.id !== id), loadingResult: null });
+  },
+
+  updateCargoItem: (id, updates) => {
+    const { cargoItems } = get();
+    set({
+      cargoItems: cargoItems.map((item) =>
+        item.id === id ? { ...item, ...updates } : item
+      ),
+      loadingResult: null,
+    });
+  },
 
   startCalculation: async () => {
     const { cargoItems, container, workerHandler } = get();

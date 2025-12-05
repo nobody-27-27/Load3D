@@ -42,6 +42,7 @@ export interface ICargoItem {
   rollDimensions?: IRollDimensions;
   stackable?: boolean;
   fragile?: boolean;
+  isPalletized?: boolean;
   color?: string;
 }
 

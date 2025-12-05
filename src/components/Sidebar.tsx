@@ -1,21 +1,24 @@
 import { useState } from 'react';
-import { Box, Package, Cylinder, Play, Trash2 } from 'lucide-react';
+import { Box, Package, Cylinder, Play, Trash2, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import { useLoadingStore } from '../store/useLoadingStore';
-import type { ICargoItem, CargoType } from '../core/types';
+import type { ICargoItem } from '../core/types';
 import { ContainerSelector } from './ContainerSelector';
 import { ContainerEditor } from './ContainerEditor';
+import { CargoItemForm } from './CargoItemForm';
 
 export function Sidebar() {
   const {
     container,
     cargoItems,
     setCargoItems,
+    addCargoItem,
+    removeCargoItem,
     startCalculation,
     isCalculating,
     loadingResult,
   } = useLoadingStore();
 
-  const [itemType, setItemType] = useState<CargoType>('box');
+  const [showForm, setShowForm] = useState(false);
 
   const addSampleItems = () => {
     const sampleItems: ICargoItem[] = [
@@ -61,6 +64,15 @@ export function Sidebar() {
     startCalculation();
   };
 
+  const handleAddItem = (item: ICargoItem) => {
+    addCargoItem(item);
+    setShowForm(false);
+  };
+
+  const handleDeleteItem = (id: string) => {
+    removeCargoItem(id);
+  };
+
   return (
     <div className="w-80 bg-slate-800 text-white p-6 flex flex-col h-full overflow-y-auto">
       <h1 className="text-2xl font-bold mb-6">3D Container Loading</h1>
@@ -85,26 +97,59 @@ export function Sidebar() {
           </button>
         </div>
 
-        <button
-          onClick={addSampleItems}
-          className="w-full bg-slate-700 hover:bg-slate-600 rounded-lg p-3 mb-4 transition-colors"
-        >
-          Add Sample Items
-        </button>
+        <div className="space-y-3 mb-4">
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="w-full bg-blue-600 hover:bg-blue-700 rounded-lg p-3 flex items-center justify-center gap-2 font-semibold transition-colors"
+          >
+            {showForm ? (
+              <>
+                <ChevronUp size={20} />
+                Hide Form
+              </>
+            ) : (
+              <>
+                <Plus size={20} />
+                Add Cargo Item
+              </>
+            )}
+          </button>
+
+          {showForm && (
+            <CargoItemForm onAdd={handleAddItem} onCancel={() => setShowForm(false)} />
+          )}
+
+          <button
+            onClick={addSampleItems}
+            className="w-full bg-slate-700 hover:bg-slate-600 rounded-lg p-3 transition-colors text-sm"
+          >
+            Add Sample Items
+          </button>
+        </div>
 
         <div className="space-y-2 max-h-64 overflow-y-auto">
           {cargoItems.map((item) => (
             <div
               key={item.id}
-              className="bg-slate-700 rounded-lg p-3 flex items-center gap-3"
+              className="bg-slate-700 rounded-lg p-3 flex items-center gap-3 border-l-4"
+              style={{ borderLeftColor: item.color || '#64748b' }}
             >
-              {item.type === 'box' && <Package size={20} className="text-green-400" />}
-              {item.type === 'roll' && <Cylinder size={20} className="text-blue-400" />}
-              {item.type === 'pallet' && <Box size={20} className="text-amber-400" />}
-              <div className="flex-1">
-                <div className="font-medium">{item.name}</div>
-                <div className="text-xs text-slate-400">{item.weight} kg</div>
+              {item.type === 'box' && <Package size={20} style={{ color: item.color || '#10b981' }} />}
+              {item.type === 'roll' && <Cylinder size={20} style={{ color: item.color || '#3b82f6' }} />}
+              {item.type === 'pallet' && <Box size={20} style={{ color: item.color || '#f59e0b' }} />}
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{item.name}</div>
+                <div className="text-xs text-slate-400">
+                  {item.weight} kg × {item.quantity}
+                </div>
               </div>
+              <button
+                onClick={() => handleDeleteItem(item.id)}
+                className="p-1.5 hover:bg-slate-600 rounded transition-colors"
+                title="Delete item"
+              >
+                <Trash2 size={16} />
+              </button>
             </div>
           ))}
         </div>
