@@ -34,8 +34,8 @@ export class PackingEngine {
     const unplacedItems: ICargoItem[] = [];
 
     const sortedItems = [...items].sort((a, b) => {
-        const volA = (a.dimensions?.length || 0) * (a.dimensions?.width || 0);
-        const volB = (b.dimensions?.length || 0) * (b.dimensions?.width || 0);
+        const volA = (a.dimensions?.length || 0) * (a.dimensions?.width || 0) * (a.dimensions?.height || 0);
+        const volB = (b.dimensions?.length || 0) * (b.dimensions?.width || 0) * (b.dimensions?.height || 0);
         return volB - volA;
     });
 
