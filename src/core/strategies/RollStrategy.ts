@@ -9,17 +9,25 @@ export class RollStrategy implements IPackingStrategy {
   ): { position: IVector3; rotation: number; orientation: string; dimensions: IDimensions } | null {
     const { container } = context;
 
-    let dims: IDimensions = item.dimensions || { length: 0, width: 0, height: 0 };
+    let dims: IDimensions;
 
     if (item.rollDimensions) {
         const d = item.rollDimensions.diameter;
         dims = { length: d, width: d, height: item.rollDimensions.length };
+    } else if (item.dimensions) {
+        dims = item.dimensions;
+    } else {
+        return null;
     }
 
-    const step = 5;
+    const step = 0.5;
+    const maxX = container.dimensions.length - dims.length;
+    const maxZ = container.dimensions.width - dims.width;
 
-    for (let x = 0; x <= container.dimensions.length - dims.length; x += step) {
-      for (let z = 0; z <= container.dimensions.width - dims.width; z += step) {
+    if (maxX < 0 || maxZ < 0) return null;
+
+    for (let x = 0; x <= maxX; x += step) {
+      for (let z = 0; z <= maxZ; z += step) {
           const pos = { x, y: 0, z };
 
           if (this.canPlaceAt(pos, dims, context)) {

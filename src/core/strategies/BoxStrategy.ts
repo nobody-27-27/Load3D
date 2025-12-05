@@ -100,36 +100,33 @@ export class BoxStrategy implements IPackingStrategy {
   }
 
   private getOrientations(dims: IDimensions): Array<{ rotation: number; dimensions: IDimensions }> {
-    const orientations = [
+    const allOrientations = [
       { rotation: 0, dimensions: { length: dims.length, width: dims.width, height: dims.height } },
-      { rotation: 90, dimensions: { length: dims.width, width: dims.length, height: dims.height } }
+      { rotation: 0, dimensions: { length: dims.length, width: dims.height, height: dims.width } },
+      { rotation: 0, dimensions: { length: dims.width, width: dims.length, height: dims.height } },
+      { rotation: 0, dimensions: { length: dims.width, width: dims.height, height: dims.length } },
+      { rotation: 0, dimensions: { length: dims.height, width: dims.length, height: dims.width } },
+      { rotation: 0, dimensions: { length: dims.height, width: dims.width, height: dims.length } }
     ];
 
-    const uniqueDimensions = new Set([dims.length, dims.width, dims.height]);
-    if (uniqueDimensions.size > 1) {
-      orientations.push(
-        { rotation: 0, dimensions: { length: dims.length, width: dims.height, height: dims.width } },
-        { rotation: 90, dimensions: { length: dims.height, width: dims.length, height: dims.width } },
-        { rotation: 0, dimensions: { length: dims.height, width: dims.width, height: dims.length } },
-        { rotation: 90, dimensions: { length: dims.width, width: dims.height, height: dims.length } }
-      );
-    }
-
     const seen = new Set<string>();
-    const filtered = orientations.filter((o) => {
+    const uniqueOrientations = allOrientations.filter((o) => {
       const key = `${o.dimensions.length},${o.dimensions.width},${o.dimensions.height}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
 
-    filtered.sort((a, b) => {
+    uniqueOrientations.sort((a, b) => {
+      const heightDiff = a.dimensions.height - b.dimensions.height;
+      if (heightDiff !== 0) return heightDiff;
+
       const areaA = a.dimensions.length * a.dimensions.width;
       const areaB = b.dimensions.length * b.dimensions.width;
       return areaB - areaA;
     });
 
-    return filtered;
+    return uniqueOrientations;
   }
 
   canPlaceAt(

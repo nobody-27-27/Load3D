@@ -16,13 +16,18 @@ export class PalletStrategy implements IPackingStrategy {
       { rotation: 90, dimensions: { length: itemDims.width, width: itemDims.length, height: itemDims.height } }
     ];
 
-    const step = 10;
+    const step = 0.5;
 
-    for (let x = 0; x <= container.dimensions.length; x += step) {
-      for (let z = 0; z <= container.dimensions.width; z += step) {
-        const candidatePos = { x, y: 0, z };
+    for (const orientation of orientations) {
+      const maxX = container.dimensions.length - orientation.dimensions.length;
+      const maxZ = container.dimensions.width - orientation.dimensions.width;
 
-        for (const orientation of orientations) {
+      if (maxX < 0 || maxZ < 0) continue;
+
+      for (let x = 0; x <= maxX; x += step) {
+        for (let z = 0; z <= maxZ; z += step) {
+          const candidatePos = { x, y: 0, z };
+
           if (this.canPlaceAt(candidatePos, orientation.dimensions, context)) {
             return {
               position: candidatePos,

@@ -52,7 +52,6 @@ function PlacedItems() {
             key={placedItem.itemId}
             args={[length, height, width]}
             position={[x + length / 2, y + height / 2, z + width / 2]}
-            rotation={[0, (placedItem.rotation * Math.PI) / 180, 0]}
           >
             <meshStandardMaterial
               color={placedItem.item.color || '#10b981'}

@@ -69,13 +69,13 @@ export class PackingEngine {
 
       const result = strategy.findBestPosition(item, context);
 
-      if (result) {
+      if (result && result.dimensions) {
         placedItems.push({
           itemId: item.id,
           item: item,
           position: result.position,
           rotation: result.rotation,
-          dimensions: result.dimensions || item.dimensions!,
+          dimensions: result.dimensions,
           orientation: (result as any).orientation || 'horizontal'
         });
       } else {
