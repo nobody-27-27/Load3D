@@ -58,11 +58,5 @@ export function validateQuantity(quantity: number): ValidationResult {
 }
 
 export function validateName(name: string): ValidationResult {
-  if (!name || name.trim().length === 0) {
-    return {
-      isValid: false,
-      error: 'Name is required',
-    };
-  }
   return { isValid: true };
 }

@@ -13,9 +13,10 @@ import {
 interface CargoItemFormProps {
   onAdd: (item: ICargoItem) => void;
   onCancel?: () => void;
+  existingItems: ICargoItem[];
 }
 
-export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
+export function CargoItemForm({ onAdd, onCancel, existingItems }: CargoItemFormProps) {
   const [itemType, setItemType] = useState<CargoType>('box');
   const [name, setName] = useState('');
   const [weight, setWeight] = useState('');
@@ -34,12 +35,15 @@ export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
 
   const [errors, setErrors] = useState<string[]>([]);
 
+  const generateAutoName = (type: CargoType): string => {
+    const itemsOfType = existingItems.filter((item) => item.type === type);
+    const count = itemsOfType.length + 1;
+    return `${type}-${count}`;
+  };
+
   const handleTypeChange = (type: CargoType) => {
     setItemType(type);
     setErrors([]);
-    if (!name) {
-      setName(type === 'box' ? 'Box' : 'Roll');
-    }
   };
 
   const validateForm = (): boolean => {
@@ -94,11 +98,12 @@ export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
 
     const selectedColor = color || getRandomColor();
     const itemId = `${itemType}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const finalName = name.trim() || generateAutoName(itemType);
 
     const newItem: ICargoItem = {
       id: itemId,
       type: itemType,
-      name: name.trim(),
+      name: finalName,
       quantity: parseInt(quantity),
       stackable,
       isPalletized,
@@ -182,12 +187,14 @@ export function CargoItemForm({ onAdd, onCancel }: CargoItemFormProps) {
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-2">Name</label>
+          <label className="block text-sm font-medium mb-2">
+            Name <span className="text-slate-400 font-normal">(optional)</span>
+          </label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={itemType === 'box' ? 'Box 1' : 'Roll 1'}
+            placeholder={`Auto: ${generateAutoName(itemType)}`}
             className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
           />
         </div>

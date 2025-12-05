@@ -80,7 +80,7 @@ export function Sidebar() {
           </button>
 
           {showForm && (
-            <CargoItemForm onAdd={handleAddItem} onCancel={() => setShowForm(false)} />
+            <CargoItemForm onAdd={handleAddItem} onCancel={() => setShowForm(false)} existingItems={cargoItems} />
           )}
         </div>
 
