@@ -96,8 +96,18 @@ export function Sidebar() {
               {item.type === 'pallet' && <Box size={20} style={{ color: item.color || '#f59e0b' }} />}
               <div className="flex-1 min-w-0">
                 <div className="font-medium truncate">{item.name}</div>
-                <div className="text-xs text-slate-400">
-                  {item.weight ? `${item.weight} kg × ${item.quantity}` : `Qty: ${item.quantity}`}
+                <div className="text-xs text-slate-400 space-y-0.5">
+                  {item.type === 'box' && item.dimensions && (
+                    <div>
+                      {Math.round(item.dimensions.length * 100)}×{Math.round(item.dimensions.width * 100)}×{Math.round(item.dimensions.height * 100)} cm
+                    </div>
+                  )}
+                  {item.type === 'roll' && item.rollDimensions && (
+                    <div>
+                      ⌀{Math.round(item.rollDimensions.diameter * 100)}×{Math.round(item.rollDimensions.length * 100)} cm
+                    </div>
+                  )}
+                  <div>Qty: {item.quantity}</div>
                 </div>
               </div>
               <button
