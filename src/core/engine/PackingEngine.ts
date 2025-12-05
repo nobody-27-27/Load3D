@@ -34,9 +34,17 @@ export class PackingEngine {
     const unplacedItems: ICargoItem[] = [];
 
     const sortedItems = [...items].sort((a, b) => {
-        const volA = (a.dimensions?.length || 0) * (a.dimensions?.width || 0) * (a.dimensions?.height || 0);
-        const volB = (b.dimensions?.length || 0) * (b.dimensions?.width || 0) * (b.dimensions?.height || 0);
-        return volB - volA;
+        const getVol = (i: ICargoItem) => {
+            if (i.rollDimensions) {
+                const r = i.rollDimensions.diameter / 2;
+                return Math.PI * r * r * i.rollDimensions.length;
+            }
+            if (i.dimensions) {
+                return i.dimensions.length * i.dimensions.width * i.dimensions.height;
+            }
+            return 0;
+        };
+        return getVol(b) - getVol(a);
     });
 
     for (const item of sortedItems) {
@@ -57,7 +65,7 @@ export class PackingEngine {
           position: result.position,
           rotation: result.rotation,
           dimensions: result.dimensions || item.dimensions!,
-          orientation: result.orientation as any || 'horizontal'
+          orientation: (result as any).orientation || 'horizontal'
         });
       } else {
         unplacedItems.push(item);
