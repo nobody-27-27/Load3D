@@ -20,42 +20,6 @@ export function Sidebar() {
 
   const [showForm, setShowForm] = useState(false);
 
-  const addSampleItems = () => {
-    const sampleItems: ICargoItem[] = [
-      {
-        id: 'box-1',
-        type: 'box',
-        name: 'Box 1',
-        weight: 100,
-        quantity: 1,
-        dimensions: { length: 1.2, width: 0.8, height: 1.0 },
-        stackable: true,
-        color: '#10b981',
-      },
-      {
-        id: 'box-2',
-        type: 'box',
-        name: 'Box 2',
-        weight: 150,
-        quantity: 1,
-        dimensions: { length: 1.5, width: 1.0, height: 1.2 },
-        stackable: true,
-        color: '#3b82f6',
-      },
-      {
-        id: 'pallet-1',
-        type: 'pallet',
-        name: 'Pallet 1',
-        weight: 50,
-        quantity: 1,
-        dimensions: { length: 1.2, width: 0.8, height: 0.15 },
-        color: '#f59e0b',
-      },
-    ];
-
-    setCargoItems([...cargoItems, ...sampleItems]);
-  };
-
   const clearItems = () => {
     setCargoItems([]);
   };
@@ -97,10 +61,10 @@ export function Sidebar() {
           </button>
         </div>
 
-        <div className="space-y-3 mb-4">
+        <div className="mb-4">
           <button
             onClick={() => setShowForm(!showForm)}
-            className="w-full bg-blue-600 hover:bg-blue-700 rounded-lg p-3 flex items-center justify-center gap-2 font-semibold transition-colors"
+            className="w-full bg-blue-600 hover:bg-blue-700 rounded-lg p-3 flex items-center justify-center gap-2 font-semibold transition-colors mb-3"
           >
             {showForm ? (
               <>
@@ -118,13 +82,6 @@ export function Sidebar() {
           {showForm && (
             <CargoItemForm onAdd={handleAddItem} onCancel={() => setShowForm(false)} />
           )}
-
-          <button
-            onClick={addSampleItems}
-            className="w-full bg-slate-700 hover:bg-slate-600 rounded-lg p-3 transition-colors text-sm"
-          >
-            Add Sample Items
-          </button>
         </div>
 
         <div className="space-y-2 max-h-64 overflow-y-auto">
