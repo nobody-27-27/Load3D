@@ -172,16 +172,16 @@ export class PatternGenerator {
     let currentZ = 0;
 
     for (const row of pattern.rows) {
-      if (currentZ >= containerDims.width) break;
-
       const itemLength = row.itemOrientation === 'length' ? baseDims.length : baseDims.width;
       const itemWidth = row.itemOrientation === 'length' ? baseDims.width : baseDims.length;
       const rotation = row.itemOrientation === 'length' ? 0 : 90;
 
+      if (currentZ + itemWidth > containerDims.width + 0.01) break;
+
       for (let i = 0; i < row.itemsPerRow; i++) {
         const x = i * itemLength;
 
-        if (x + itemLength > containerDims.length + 0.1) break;
+        if (x + itemLength > containerDims.length + 0.01) break;
 
         slots.push({
           position: { x, y: 0, z: currentZ },

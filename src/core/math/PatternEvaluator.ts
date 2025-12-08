@@ -160,9 +160,15 @@ export class PatternEvaluator {
       const y = layer * itemHeight;
 
       for (let z = 0; z < widthFit; z++) {
+        const zPos = z * itemWidth;
+        if (zPos + itemWidth > containerDims.width + 0.01) break;
+
         for (let x = 0; x < lengthFit; x++) {
+          const xPos = x * itemLength;
+          if (xPos + itemLength > containerDims.length + 0.01) break;
+
           slots.push({
-            position: { x: x * itemLength, y, z: z * itemWidth },
+            position: { x: xPos, y, z: zPos },
             dimensions: { length: itemLength, width: itemWidth, height: itemHeight },
             rotation: 0
           });
