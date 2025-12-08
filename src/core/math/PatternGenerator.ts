@@ -10,6 +10,7 @@ export interface ILayoutPattern {
   rows: IRowPattern[];
   totalItems: number;
   utilizationScore: number;
+  orientation: IDimensions;
 }
 
 export interface IPlacementSlot {
@@ -88,7 +89,8 @@ export class PatternGenerator {
         patterns.push({
           rows,
           totalItems,
-          utilizationScore: utilization
+          utilizationScore: utilization,
+          orientation: orientation
         });
       }
     }
@@ -194,7 +196,8 @@ export class PatternGenerator {
         patterns.push({
           rows,
           totalItems,
-          utilizationScore: utilization
+          utilizationScore: utilization,
+          orientation: orientation
         });
       }
     }
@@ -218,11 +221,7 @@ export class PatternGenerator {
   ): IPlacementSlot[] {
     const slots: IPlacementSlot[] = [];
 
-    const baseDims = palletDims ? {
-      length: palletDims.length,
-      width: palletDims.width,
-      height: itemDims.height + palletDims.height
-    } : itemDims;
+    const baseDims = pattern.orientation;
 
     const maxLayers = isPalletized ? 1 : Math.floor(containerDims.height / baseDims.height);
 
