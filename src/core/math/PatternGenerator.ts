@@ -56,10 +56,12 @@ export class PatternGenerator {
         if (usedWidth > containerWidth + 0.1) continue;
         if (rowsL === 0 && rowsW === 0) continue;
 
-        const itemsPerRowL = Math.floor(containerLength / lengthOriented.itemLength);
-        const itemsPerRowW = Math.floor(containerLength / widthOriented.itemLength);
+        // For back-to-front filling: itemsPerRow represents positions across width
+        const itemsPerRowL = Math.floor(containerWidth / lengthOriented.itemWidth);
+        const itemsPerRowW = Math.floor(containerWidth / widthOriented.itemWidth);
 
-        const totalItems = (rowsL * itemsPerRowL) + (rowsW * itemsPerRowW);
+        const depthPositions = Math.floor(containerLength / Math.max(lengthOriented.itemLength, widthOriented.itemLength));
+        const totalItems = ((rowsL * itemsPerRowL) + (rowsW * itemsPerRowW)) * depthPositions;
 
         if (totalItems === 0) continue;
 
@@ -67,7 +69,7 @@ export class PatternGenerator {
 
         for (let i = 0; i < rowsL; i++) {
           rows.push({
-            rowWidth: lengthOriented.itemWidth,
+            rowWidth: lengthOriented.itemLength,
             itemOrientation: 'length',
             itemsPerRow: itemsPerRowL
           });
@@ -75,7 +77,7 @@ export class PatternGenerator {
 
         for (let i = 0; i < rowsW; i++) {
           rows.push({
-            rowWidth: widthOriented.itemWidth,
+            rowWidth: widthOriented.itemLength,
             itemOrientation: 'width',
             itemsPerRow: itemsPerRowW
           });
@@ -153,12 +155,14 @@ export class PatternGenerator {
 
       for (const config of configs) {
         const rows: IRowPattern[] = [];
-        const itemsPerRowL = Math.floor(containerDims.length / lengthOriented.itemLength);
-        const itemsPerRowW = Math.floor(containerDims.length / widthOriented.itemLength);
+        // For back-to-front filling: itemsPerRow represents positions across container WIDTH
+        // not positions along container LENGTH
+        const itemsPerRowL = Math.floor(containerDims.width / lengthOriented.itemWidth);
+        const itemsPerRowW = Math.floor(containerDims.width / widthOriented.itemWidth);
 
         for (let i = 0; i < config.lengthRows; i++) {
           rows.push({
-            rowWidth: lengthOriented.itemWidth,
+            rowWidth: lengthOriented.itemLength,
             itemOrientation: 'length',
             itemsPerRow: itemsPerRowL
           });
@@ -166,7 +170,7 @@ export class PatternGenerator {
 
         for (let i = 0; i < config.widthRows; i++) {
           rows.push({
-            rowWidth: widthOriented.itemWidth,
+            rowWidth: widthOriented.itemLength,
             itemOrientation: 'width',
             itemsPerRow: itemsPerRowW
           });
@@ -178,7 +182,8 @@ export class PatternGenerator {
         if (itemsInLayer === 0) continue;
 
         const layers = Math.floor(containerDims.height / orientation.height);
-        const totalItems = itemsInLayer * layers;
+        const depthPositions = Math.floor(containerDims.length / orientation.length);
+        const totalItems = itemsInLayer * layers * depthPositions;
 
         if (totalItems === 0) continue;
 
@@ -221,38 +226,52 @@ export class PatternGenerator {
 
     const maxLayers = isPalletized ? 1 : Math.floor(containerDims.height / baseDims.height);
 
-    let currentZ = 0;
+    // Calculate depth positions based on first row dimensions
+    if (pattern.rows.length === 0) return slots;
 
-    for (const row of pattern.rows) {
-      const rowItemLength = row.itemOrientation === 'length' ? baseDims.length : baseDims.width;
-      const rowItemWidth = row.itemOrientation === 'length' ? baseDims.width : baseDims.length;
-      const rowRotation = row.itemOrientation === 'length' ? 0 : 90;
+    const firstRow = pattern.rows[0];
+    const depthIncrement = firstRow.itemOrientation === 'length' ? baseDims.length : baseDims.width;
+    const maxDepthPositions = Math.floor(containerDims.length / depthIncrement);
 
-      if (currentZ + rowItemWidth > containerDims.width + 0.01) break;
+    // Back-to-front filling: iterate depth (X) first, then height (Y), then width (Z)
+    for (let depthPos = 0; depthPos < maxDepthPositions; depthPos++) {
+      const x = depthPos * depthIncrement;
+
+      if (x + depthIncrement > containerDims.length + 0.01) break;
 
       for (let layer = 0; layer < maxLayers; layer++) {
         const y = layer * baseDims.height;
 
         if (y + baseDims.height > containerDims.height + 0.01) break;
 
-        for (let i = 0; i < row.itemsPerRow; i++) {
-          const x = i * rowItemLength;
+        let currentZ = 0;
 
-          if (x + rowItemLength > containerDims.length + 0.01) break;
+        for (const row of pattern.rows) {
+          const rowItemLength = row.itemOrientation === 'length' ? baseDims.length : baseDims.width;
+          const rowItemWidth = row.itemOrientation === 'length' ? baseDims.width : baseDims.length;
+          const rowRotation = row.itemOrientation === 'length' ? 0 : 90;
 
-          slots.push({
-            position: { x, y, z: currentZ },
-            dimensions: {
-              length: rowItemLength,
-              width: rowItemWidth,
-              height: baseDims.height
-            },
-            rotation: rowRotation
-          });
+          if (currentZ + rowItemWidth > containerDims.width + 0.01) break;
+
+          for (let i = 0; i < row.itemsPerRow; i++) {
+            const z = currentZ + (i * rowItemWidth);
+
+            if (z + rowItemWidth > containerDims.width + 0.01) break;
+
+            slots.push({
+              position: { x, y, z },
+              dimensions: {
+                length: rowItemLength,
+                width: rowItemWidth,
+                height: baseDims.height
+              },
+              rotation: rowRotation
+            });
+          }
+
+          currentZ += row.rowWidth;
         }
       }
-
-      currentZ += row.rowWidth;
     }
 
     return slots;
