@@ -117,31 +117,81 @@ export class PatternGenerator {
 
     const orientations = this.getAllOrientations(baseDims);
 
-    for (const primaryOrientation of orientations.slice(0, 6)) {
-      const lengthFit = Math.floor(containerDims.length / primaryOrientation.length);
-      const widthFit = Math.floor(containerDims.width / primaryOrientation.width);
-      const itemsInLayer = lengthFit * widthFit;
+    for (const orientation of orientations) {
+      const lengthOriented = {
+        itemLength: orientation.length,
+        itemWidth: orientation.width,
+        itemHeight: orientation.height
+      };
 
-      if (itemsInLayer === 0) continue;
+      const widthOriented = {
+        itemLength: orientation.width,
+        itemWidth: orientation.length,
+        itemHeight: orientation.height
+      };
 
-      const layers = Math.floor(containerDims.height / primaryOrientation.height);
-      const totalItems = itemsInLayer * layers;
+      const configs = [
+        { lengthRows: 1, widthRows: 0 },
+        { lengthRows: 0, widthRows: 1 }
+      ];
 
-      if (totalItems === 0) continue;
+      const maxLengthRows = Math.floor(containerDims.width / lengthOriented.itemWidth);
+      const maxWidthRows = Math.floor(containerDims.width / widthOriented.itemWidth);
 
-      const usedVolume = totalItems * (primaryOrientation.length * primaryOrientation.width * primaryOrientation.height);
-      const containerVolume = containerDims.length * containerDims.width * containerDims.height;
-      const utilization = (usedVolume / containerVolume) * 100;
+      if (maxLengthRows > 1 && maxWidthRows > 0) {
+        for (let lr = 1; lr <= Math.min(maxLengthRows, 3); lr++) {
+          for (let wr = 0; wr <= Math.min(maxWidthRows, 3); wr++) {
+            if (lr === 1 && wr === 0) continue;
+            if (lr === 0 && wr === 1) continue;
+            const usedWidth = (lr * lengthOriented.itemWidth) + (wr * widthOriented.itemWidth);
+            if (usedWidth <= containerDims.width + 0.01) {
+              configs.push({ lengthRows: lr, widthRows: wr });
+            }
+          }
+        }
+      }
 
-      patterns.push({
-        rows: [{
-          rowWidth: primaryOrientation.width,
-          itemOrientation: 'length',
-          itemsPerRow: lengthFit
-        }],
-        totalItems,
-        utilizationScore: utilization
-      });
+      for (const config of configs) {
+        const rows: IRowPattern[] = [];
+        const itemsPerRowL = Math.floor(containerDims.length / lengthOriented.itemLength);
+        const itemsPerRowW = Math.floor(containerDims.length / widthOriented.itemLength);
+
+        for (let i = 0; i < config.lengthRows; i++) {
+          rows.push({
+            rowWidth: lengthOriented.itemWidth,
+            itemOrientation: 'length',
+            itemsPerRow: itemsPerRowL
+          });
+        }
+
+        for (let i = 0; i < config.widthRows; i++) {
+          rows.push({
+            rowWidth: widthOriented.itemWidth,
+            itemOrientation: 'width',
+            itemsPerRow: itemsPerRowW
+          });
+        }
+
+        if (rows.length === 0) continue;
+
+        const itemsInLayer = (config.lengthRows * itemsPerRowL) + (config.widthRows * itemsPerRowW);
+        if (itemsInLayer === 0) continue;
+
+        const layers = Math.floor(containerDims.height / orientation.height);
+        const totalItems = itemsInLayer * layers;
+
+        if (totalItems === 0) continue;
+
+        const usedVolume = totalItems * (orientation.length * orientation.width * orientation.height);
+        const containerVolume = containerDims.length * containerDims.width * containerDims.height;
+        const utilization = (usedVolume / containerVolume) * 100;
+
+        patterns.push({
+          rows,
+          totalItems,
+          utilizationScore: utilization
+        });
+      }
     }
 
     patterns.sort((a, b) => {
@@ -169,32 +219,40 @@ export class PatternGenerator {
       height: itemDims.height + palletDims.height
     } : itemDims;
 
-    let currentZ = 0;
+    const maxLayers = isPalletized ? 1 : Math.floor(containerDims.height / baseDims.height);
 
-    for (const row of pattern.rows) {
-      const itemLength = row.itemOrientation === 'length' ? baseDims.length : baseDims.width;
-      const itemWidth = row.itemOrientation === 'length' ? baseDims.width : baseDims.length;
-      const rotation = row.itemOrientation === 'length' ? 0 : 90;
+    for (let layer = 0; layer < maxLayers; layer++) {
+      const y = layer * baseDims.height;
 
-      if (currentZ + itemWidth > containerDims.width + 0.01) break;
+      if (y + baseDims.height > containerDims.height + 0.01) break;
 
-      for (let i = 0; i < row.itemsPerRow; i++) {
-        const x = i * itemLength;
+      let currentZ = 0;
 
-        if (x + itemLength > containerDims.length + 0.01) break;
+      for (const row of pattern.rows) {
+        const itemLength = row.itemOrientation === 'length' ? baseDims.length : baseDims.width;
+        const itemWidth = row.itemOrientation === 'length' ? baseDims.width : baseDims.length;
+        const rotation = row.itemOrientation === 'length' ? 0 : 90;
 
-        slots.push({
-          position: { x, y: 0, z: currentZ },
-          dimensions: {
-            length: itemLength,
-            width: itemWidth,
-            height: baseDims.height
-          },
-          rotation
-        });
+        if (currentZ + itemWidth > containerDims.width + 0.01) break;
+
+        for (let i = 0; i < row.itemsPerRow; i++) {
+          const x = i * itemLength;
+
+          if (x + itemLength > containerDims.length + 0.01) break;
+
+          slots.push({
+            position: { x, y, z: currentZ },
+            dimensions: {
+              length: itemLength,
+              width: itemWidth,
+              height: baseDims.height
+            },
+            rotation
+          });
+        }
+
+        currentZ += row.rowWidth;
       }
-
-      currentZ += row.rowWidth;
     }
 
     return slots;

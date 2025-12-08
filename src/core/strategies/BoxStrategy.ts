@@ -57,23 +57,24 @@ export class BoxStrategy implements IPackingStrategy {
     if (patterns.length === 0) return null;
 
     const bestPattern = patterns[0];
+    const slots = PatternGenerator.generatePlacementSlots(
+      bestPattern,
+      item.dimensions!,
+      item.palletDimensions,
+      context.container.dimensions,
+      item.isPalletized || false
+    );
 
-    if (bestPattern.rows.length === 0) return null;
+    if (slots.length === 0) return null;
 
-    const baseDims = item.palletDimensions ? {
-      length: item.palletDimensions.length,
-      width: item.palletDimensions.width,
-      height: item.dimensions!.height + item.palletDimensions.height
-    } : item.dimensions!;
-
-    const position = { x: 0, y: 0, z: 0 };
-
-    if (this.canPlaceAt(item, position, baseDims, context)) {
-      return {
-        position,
-        rotation: 0,
-        dimensions: baseDims
-      };
+    for (const slot of slots) {
+      if (this.canPlaceAt(item, slot.position, slot.dimensions, context)) {
+        return {
+          position: slot.position,
+          rotation: slot.rotation,
+          dimensions: slot.dimensions
+        };
+      }
     }
 
     return null;
