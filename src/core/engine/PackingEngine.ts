@@ -43,6 +43,32 @@ export class PackingEngine {
     }
   }
 
+  private ensurePalletDimensions(item: ICargoItem): ICargoItem {
+    if (item.isPalletized && !item.palletDimensions) {
+      if (item.dimensions) {
+        return {
+          ...item,
+          palletDimensions: {
+            length: item.dimensions.length + 0.1,
+            width: item.dimensions.width + 0.1,
+            height: 0.15
+          }
+        };
+      } else if (item.rollDimensions) {
+        const diameter = item.rollDimensions.diameter;
+        return {
+          ...item,
+          palletDimensions: {
+            length: diameter + 0.1,
+            width: diameter + 0.1,
+            height: 0.15
+          }
+        };
+      }
+    }
+    return item;
+  }
+
   run(items: ICargoItem[], container: IContainer): ILoadingResult {
     const startTime = performance.now();
     const placedItems: IPlacedItem[] = [];
@@ -51,8 +77,9 @@ export class PackingEngine {
     const expandedItems: ICargoItem[] = [];
     for (const item of items) {
       for (let i = 0; i < item.quantity; i++) {
+        const processedItem = this.ensurePalletDimensions(item);
         expandedItems.push({
-          ...item,
+          ...processedItem,
           id: `${item.id}-${i}`,
           quantity: 1,
         });
