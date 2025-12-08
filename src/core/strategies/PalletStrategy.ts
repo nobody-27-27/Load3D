@@ -1,6 +1,7 @@
 import type { ICargoItem, IPackingContext, IVector3, IDimensions } from '../types';
 import type { IPackingStrategy } from './IPackingStrategy';
 import { GeometryUtils } from '../math/GeometryUtils';
+import { PatternGenerator } from '../math/PatternGenerator';
 
 export class PalletStrategy implements IPackingStrategy {
   findBestPosition(
@@ -18,6 +19,13 @@ export class PalletStrategy implements IPackingStrategy {
         width: item.palletDimensions.width,
         height: itemDims.height + item.palletDimensions.height
       };
+    }
+
+    const tryPatternBased = context.placedItems.length === 0;
+
+    if (tryPatternBased) {
+      const patternResult = this.tryPatternBasedPlacement(item, baseDims, context);
+      if (patternResult) return patternResult;
     }
 
     const orientations = [
@@ -46,6 +54,43 @@ export class PalletStrategy implements IPackingStrategy {
           }
         }
       }
+    }
+
+    return null;
+  }
+
+  private tryPatternBasedPlacement(
+    item: ICargoItem,
+    baseDims: IDimensions,
+    context: IPackingContext
+  ): { position: IVector3; rotation: number; dimensions: IDimensions } | null {
+    const patterns = PatternGenerator.generatePalletPatterns(
+      item.dimensions!,
+      item.palletDimensions,
+      context.container.dimensions,
+      1
+    );
+
+    if (patterns.length === 0) return null;
+
+    const bestPattern = patterns[0];
+    const slots = PatternGenerator.generatePlacementSlots(
+      bestPattern,
+      item.dimensions!,
+      item.palletDimensions,
+      context.container.dimensions
+    );
+
+    if (slots.length === 0) return null;
+
+    const slot = slots[0];
+
+    if (this.canPlaceAt(item, slot.position, slot.dimensions, context)) {
+      return {
+        position: slot.position,
+        rotation: slot.rotation,
+        dimensions: slot.dimensions
+      };
     }
 
     return null;

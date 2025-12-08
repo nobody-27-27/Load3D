@@ -3,16 +3,31 @@ import { BoxStrategy } from '../strategies/BoxStrategy';
 import { RollStrategy } from '../strategies/RollStrategy';
 import { PalletStrategy } from '../strategies/PalletStrategy';
 import type { IPackingStrategy } from '../strategies/IPackingStrategy';
+import { PatternEvaluator } from '../math/PatternEvaluator';
+import { PrecisePlacer } from '../math/PrecisePlacer';
+
+export interface IPackingConfig {
+  enablePatternPacking: boolean;
+  maxPatternGenerationTime: number;
+  minItemsForPatterns: number;
+}
 
 export class PackingEngine {
   private boxStrategy: IPackingStrategy;
   private rollStrategy: IPackingStrategy;
   private palletStrategy: IPackingStrategy;
+  private config: IPackingConfig;
 
-  constructor() {
+  constructor(config?: Partial<IPackingConfig>) {
     this.boxStrategy = new BoxStrategy();
     this.rollStrategy = new RollStrategy();
     this.palletStrategy = new PalletStrategy();
+    this.config = {
+      enablePatternPacking: true,
+      maxPatternGenerationTime: 3000,
+      minItemsForPatterns: 5,
+      ...config
+    };
   }
 
   private getStrategy(type: string): IPackingStrategy {
@@ -58,28 +73,45 @@ export class PackingEngine {
         return getVol(b) - getVol(a);
     });
 
-    for (const item of sortedItems) {
-      const strategy = this.getStrategy(item.type);
+    const itemGroups = this.groupIdenticalItems(sortedItems);
 
-      const context: IPackingContext = {
-        container,
-        placedItems,
-        activeLayer: { zStart: 0, zEnd: 0, occupiedSpaces: [] }
-      };
+    for (const group of itemGroups) {
+      if (this.config.enablePatternPacking &&
+          group.items.length >= this.config.minItemsForPatterns &&
+          (group.items[0].type === 'pallet' || group.items[0].type === 'box')) {
 
-      const result = strategy.findBestPosition(item, context);
+        const patternResult = this.tryPatternPackingForGroup(group.items, container, placedItems);
 
-      if (result && result.dimensions) {
-        placedItems.push({
-          itemId: item.id,
-          item: item,
-          position: result.position,
-          rotation: result.rotation,
-          dimensions: result.dimensions,
-          orientation: (result as any).orientation || 'horizontal'
-        });
-      } else {
-        unplacedItems.push(item);
+        if (patternResult.placed.length > 0) {
+          placedItems.push(...patternResult.placed);
+          unplacedItems.push(...patternResult.remaining);
+          continue;
+        }
+      }
+
+      for (const item of group.items) {
+        const strategy = this.getStrategy(item.type);
+
+        const context: IPackingContext = {
+          container,
+          placedItems,
+          activeLayer: { zStart: 0, zEnd: 0, occupiedSpaces: [] }
+        };
+
+        const result = strategy.findBestPosition(item, context);
+
+        if (result && result.dimensions) {
+          placedItems.push({
+            itemId: item.id,
+            item: item,
+            position: result.position,
+            rotation: result.rotation,
+            dimensions: result.dimensions,
+            orientation: (result as any).orientation || 'horizontal'
+          });
+        } else {
+          unplacedItems.push(item);
+        }
       }
     }
 
@@ -95,5 +127,66 @@ export class PackingEngine {
       totalWeight: placedItems.reduce((acc, p) => acc + (p.item.weight || 0), 0),
       executionTime: endTime - startTime,
     };
+  }
+
+  private groupIdenticalItems(items: ICargoItem[]): Array<{ key: string; items: ICargoItem[] }> {
+    const groups = new Map<string, ICargoItem[]>();
+
+    for (const item of items) {
+      const key = this.getItemKey(item);
+
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+
+      groups.get(key)!.push(item);
+    }
+
+    return Array.from(groups.entries()).map(([key, items]) => ({ key, items }));
+  }
+
+  private getItemKey(item: ICargoItem): string {
+    const dims = item.dimensions;
+    const palletDims = item.palletDimensions;
+    const rollDims = item.rollDimensions;
+
+    return `${item.type}-${dims?.length}-${dims?.width}-${dims?.height}-${palletDims?.length}-${palletDims?.width}-${palletDims?.height}-${rollDims?.diameter}-${rollDims?.length}-${item.isPalletized}`;
+  }
+
+  private tryPatternPackingForGroup(
+    items: ICargoItem[],
+    container: IContainer,
+    existingPlaced: IPlacedItem[]
+  ): { placed: IPlacedItem[]; remaining: ICargoItem[] } {
+    if (items.length === 0) return { placed: [], remaining: [] };
+
+    const itemType = items[0].type;
+
+    let evaluation = null;
+
+    if (itemType === 'pallet') {
+      evaluation = PatternEvaluator.evaluatePalletPatterns(
+        items,
+        container,
+        this.config.maxPatternGenerationTime
+      );
+    } else if (itemType === 'box') {
+      evaluation = PatternEvaluator.evaluateBoxPatterns(
+        items,
+        container,
+        this.config.maxPatternGenerationTime
+      );
+    }
+
+    if (!evaluation || evaluation.slots.length === 0) {
+      return { placed: [], remaining: items };
+    }
+
+    return PrecisePlacer.placeItemsFromSlots(
+      items,
+      evaluation.slots,
+      container,
+      existingPlaced
+    );
   }
 }

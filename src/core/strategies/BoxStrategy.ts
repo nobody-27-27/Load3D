@@ -1,6 +1,7 @@
 import type { ICargoItem, IPackingContext, IVector3, IDimensions } from '../types';
 import type { IPackingStrategy } from './IPackingStrategy';
 import { GeometryUtils } from '../math/GeometryUtils';
+import { PatternGenerator } from '../math/PatternGenerator';
 
 interface CornerPoint {
   position: IVector3;
@@ -16,6 +17,13 @@ export class BoxStrategy implements IPackingStrategy {
     const itemDims = item.dimensions;
     if (!itemDims) return null;
 
+    const tryPatternBased = placedItems.length === 0;
+
+    if (tryPatternBased && !item.isPalletized) {
+      const patternResult = this.tryPatternBasedPlacement(item, context);
+      if (patternResult) return patternResult;
+    }
+
     const cornerPoints = this.generateCornerPoints(placedItems, container.dimensions);
 
     const orientations = this.getOrientations(itemDims, item.palletDimensions);
@@ -30,6 +38,42 @@ export class BoxStrategy implements IPackingStrategy {
           };
         }
       }
+    }
+
+    return null;
+  }
+
+  private tryPatternBasedPlacement(
+    item: ICargoItem,
+    context: IPackingContext
+  ): { position: IVector3; rotation: number; dimensions: IDimensions } | null {
+    const patterns = PatternGenerator.generateBoxPatterns(
+      item.dimensions!,
+      item.palletDimensions,
+      context.container.dimensions,
+      1
+    );
+
+    if (patterns.length === 0) return null;
+
+    const bestPattern = patterns[0];
+
+    if (bestPattern.rows.length === 0) return null;
+
+    const baseDims = item.palletDimensions ? {
+      length: item.palletDimensions.length,
+      width: item.palletDimensions.width,
+      height: item.dimensions!.height + item.palletDimensions.height
+    } : item.dimensions!;
+
+    const position = { x: 0, y: 0, z: 0 };
+
+    if (this.canPlaceAt(item, position, baseDims, context)) {
+      return {
+        position,
+        rotation: 0,
+        dimensions: baseDims
+      };
     }
 
     return null;
