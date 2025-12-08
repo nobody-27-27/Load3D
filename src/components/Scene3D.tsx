@@ -50,12 +50,12 @@ function PlacedItems() {
         if (hasPallet) {
           const palletDims = placedItem.item.palletDimensions!;
           const itemDims = placedItem.item.dimensions!;
-          const totalDims = placedItem.dimensions;
+          const isRotated = placedItem.rotation === 90 || placedItem.rotation === 270;
 
-          const palletLength = palletDims.length;
-          const palletWidth = palletDims.width;
-          const boxLength = itemDims.length;
-          const boxWidth = itemDims.width;
+          const palletLength = isRotated ? palletDims.width : palletDims.length;
+          const palletWidth = isRotated ? palletDims.length : palletDims.width;
+          const boxLength = isRotated ? itemDims.width : itemDims.length;
+          const boxWidth = isRotated ? itemDims.length : itemDims.width;
           const boxHeight = itemDims.height;
 
           const boxOffsetX = (palletLength - boxLength) / 2;
