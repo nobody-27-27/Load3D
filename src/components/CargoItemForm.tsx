@@ -48,11 +48,14 @@ export function CargoItemForm({ onAdd, onCancel, existingItems }: CargoItemFormP
   useEffect(() => {
     if (isPalletized) {
       if (itemType === 'box') {
-        setPalletLength(length);
-        setPalletWidth(width);
+        const boxL = parseFloat(length) || 120;
+        const boxW = parseFloat(width) || 80;
+        setPalletLength(String(Math.max(boxL + 10, Math.ceil(boxL * 1.1))));
+        setPalletWidth(String(Math.max(boxW + 10, Math.ceil(boxW * 1.1))));
       } else if (itemType === 'roll') {
-        setPalletLength(diameter);
-        setPalletWidth(diameter);
+        const diam = parseFloat(diameter) || 50;
+        setPalletLength(String(Math.max(diam + 10, Math.ceil(diam * 1.2))));
+        setPalletWidth(String(Math.max(diam + 10, Math.ceil(diam * 1.2))));
       }
     }
   }, [isPalletized, itemType, length, width, diameter]);
