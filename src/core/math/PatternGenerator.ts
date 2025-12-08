@@ -221,19 +221,26 @@ export class PatternGenerator {
 
     const maxLayers = isPalletized ? 1 : Math.floor(containerDims.height / baseDims.height);
 
-    let currentZ = 0;
+    const firstRow = pattern.rows[0];
+    if (!firstRow) return slots;
 
-    for (const row of pattern.rows) {
-      const itemLength = row.itemOrientation === 'length' ? baseDims.length : baseDims.width;
-      const itemWidth = row.itemOrientation === 'length' ? baseDims.width : baseDims.length;
-      const rotation = row.itemOrientation === 'length' ? 0 : 90;
+    const itemLength = firstRow.itemOrientation === 'length' ? baseDims.length : baseDims.width;
+    const itemWidth = firstRow.itemOrientation === 'length' ? baseDims.width : baseDims.length;
+    const rotation = firstRow.itemOrientation === 'length' ? 0 : 90;
 
-      if (currentZ + itemWidth > containerDims.width + 0.01) break;
+    for (let i = 0; i < firstRow.itemsPerRow; i++) {
+      const x = i * itemLength;
 
-      for (let i = 0; i < row.itemsPerRow; i++) {
-        const x = i * itemLength;
+      if (x + itemLength > containerDims.length + 0.01) break;
 
-        if (x + itemLength > containerDims.length + 0.01) break;
+      let currentZ = 0;
+
+      for (const row of pattern.rows) {
+        const rowItemLength = row.itemOrientation === 'length' ? baseDims.length : baseDims.width;
+        const rowItemWidth = row.itemOrientation === 'length' ? baseDims.width : baseDims.length;
+        const rowRotation = row.itemOrientation === 'length' ? 0 : 90;
+
+        if (currentZ + rowItemWidth > containerDims.width + 0.01) break;
 
         for (let layer = 0; layer < maxLayers; layer++) {
           const y = layer * baseDims.height;
@@ -243,16 +250,16 @@ export class PatternGenerator {
           slots.push({
             position: { x, y, z: currentZ },
             dimensions: {
-              length: itemLength,
-              width: itemWidth,
+              length: rowItemLength,
+              width: rowItemWidth,
               height: baseDims.height
             },
-            rotation
+            rotation: rowRotation
           });
         }
-      }
 
-      currentZ += row.rowWidth;
+        currentZ += row.rowWidth;
+      }
     }
 
     return slots;
