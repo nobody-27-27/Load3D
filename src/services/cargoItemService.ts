@@ -10,6 +10,7 @@ export interface CargoItemDB {
   quantity: number;
   dimensions: any;
   roll_dimensions: any;
+  pallet_dimensions: any;
   color: string | null;
   stackable: boolean;
   is_palletized: boolean;
@@ -26,6 +27,7 @@ function convertToCargoItem(dbItem: CargoItemDB): ICargoItem {
     quantity: dbItem.quantity,
     dimensions: dbItem.dimensions,
     rollDimensions: dbItem.roll_dimensions,
+    palletDimensions: dbItem.pallet_dimensions,
     stackable: dbItem.stackable,
     isPalletized: dbItem.is_palletized,
     color: dbItem.color || undefined,
@@ -41,6 +43,7 @@ function convertFromCargoItem(item: Omit<ICargoItem, 'id'>, userId: string): Par
     quantity: item.quantity,
     dimensions: item.dimensions || null,
     roll_dimensions: item.rollDimensions || null,
+    pallet_dimensions: item.palletDimensions || null,
     color: item.color || null,
     stackable: item.stackable || false,
     is_palletized: item.isPalletized || false,
@@ -96,6 +99,7 @@ export async function updateCargoItem(id: string, updates: Partial<ICargoItem>):
   if (updates.quantity !== undefined) dbUpdates.quantity = updates.quantity;
   if (updates.dimensions !== undefined) dbUpdates.dimensions = updates.dimensions;
   if (updates.rollDimensions !== undefined) dbUpdates.roll_dimensions = updates.rollDimensions;
+  if (updates.palletDimensions !== undefined) dbUpdates.pallet_dimensions = updates.palletDimensions;
   if (updates.color !== undefined) dbUpdates.color = updates.color;
   if (updates.stackable !== undefined) dbUpdates.stackable = updates.stackable;
   if (updates.isPalletized !== undefined) dbUpdates.is_palletized = updates.isPalletized;
