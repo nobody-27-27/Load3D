@@ -95,7 +95,7 @@ export class PatternEvaluator {
     for (const pattern of patterns) {
       if (performance.now() - startTime > timeout) break;
 
-      const slots = this.generateBoxSlots(
+      const slots = PatternGenerator.generatePlacementSlots(
         pattern,
         firstItem.dimensions,
         firstItem.palletDimensions,
@@ -128,55 +128,6 @@ export class PatternEvaluator {
     }
 
     return bestEvaluation;
-  }
-
-  private static generateBoxSlots(
-    pattern: ILayoutPattern,
-    itemDims: IDimensions,
-    palletDims: IDimensions | undefined,
-    containerDims: IDimensions,
-    isPalletized: boolean = false
-  ): IPlacementSlot[] {
-    const slots: IPlacementSlot[] = [];
-
-    const baseDims = palletDims ? {
-      length: palletDims.length,
-      width: palletDims.width,
-      height: itemDims.height + palletDims.height
-    } : itemDims;
-
-    if (pattern.rows.length === 0) return slots;
-
-    const row = pattern.rows[0];
-    const itemLength = baseDims.length;
-    const itemWidth = baseDims.width;
-    const itemHeight = baseDims.height;
-
-    const lengthFit = Math.floor(containerDims.length / itemLength);
-    const widthFit = Math.floor(containerDims.width / itemWidth);
-    const heightLayers = isPalletized ? 1 : Math.floor(containerDims.height / itemHeight);
-
-    for (let layer = 0; layer < heightLayers; layer++) {
-      const y = layer * itemHeight;
-
-      for (let z = 0; z < widthFit; z++) {
-        const zPos = z * itemWidth;
-        if (zPos + itemWidth > containerDims.width + 0.01) break;
-
-        for (let x = 0; x < lengthFit; x++) {
-          const xPos = x * itemLength;
-          if (xPos + itemLength > containerDims.length + 0.01) break;
-
-          slots.push({
-            position: { x: xPos, y, z: zPos },
-            dimensions: { length: itemLength, width: itemWidth, height: itemHeight },
-            rotation: 0
-          });
-        }
-      }
-    }
-
-    return slots;
   }
 
   private static calculateScore(
