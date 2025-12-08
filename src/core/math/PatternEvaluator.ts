@@ -39,7 +39,8 @@ export class PatternEvaluator {
         pattern,
         firstItem.dimensions,
         firstItem.palletDimensions,
-        container.dimensions
+        container.dimensions,
+        firstItem.isPalletized || false
       );
 
       const itemsFitted = Math.min(slots.length, items.length);
@@ -98,7 +99,8 @@ export class PatternEvaluator {
         pattern,
         firstItem.dimensions,
         firstItem.palletDimensions,
-        container.dimensions
+        container.dimensions,
+        firstItem.isPalletized || false
       );
 
       const itemsFitted = Math.min(slots.length, items.length);
@@ -132,7 +134,8 @@ export class PatternEvaluator {
     pattern: ILayoutPattern,
     itemDims: IDimensions,
     palletDims: IDimensions | undefined,
-    containerDims: IDimensions
+    containerDims: IDimensions,
+    isPalletized: boolean = false
   ): IPlacementSlot[] {
     const slots: IPlacementSlot[] = [];
 
@@ -151,7 +154,7 @@ export class PatternEvaluator {
 
     const lengthFit = Math.floor(containerDims.length / itemLength);
     const widthFit = Math.floor(containerDims.width / itemWidth);
-    const heightLayers = Math.floor(containerDims.height / itemHeight);
+    const heightLayers = isPalletized ? 1 : Math.floor(containerDims.height / itemHeight);
 
     for (let layer = 0; layer < heightLayers; layer++) {
       const y = layer * itemHeight;

@@ -22,6 +22,11 @@ export class PrecisePlacer {
 
       const slot = slots[slotIndex];
 
+      if (item.isPalletized && slot.position.y > 0.01) {
+        remaining.push(item);
+        continue;
+      }
+
       const isValid = this.validateSlot(slot, container, [...placedItems, ...placed]);
 
       if (isValid) {

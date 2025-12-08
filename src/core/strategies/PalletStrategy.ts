@@ -78,7 +78,8 @@ export class PalletStrategy implements IPackingStrategy {
       bestPattern,
       item.dimensions!,
       item.palletDimensions,
-      context.container.dimensions
+      context.container.dimensions,
+      item.isPalletized || false
     );
 
     if (slots.length === 0) return null;

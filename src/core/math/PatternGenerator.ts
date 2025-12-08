@@ -158,7 +158,8 @@ export class PatternGenerator {
     pattern: ILayoutPattern,
     itemDims: IDimensions,
     palletDims: IDimensions | undefined,
-    containerDims: IDimensions
+    containerDims: IDimensions,
+    isPalletized: boolean = false
   ): IPlacementSlot[] {
     const slots: IPlacementSlot[] = [];
 
