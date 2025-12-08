@@ -233,6 +233,12 @@ export class PatternGenerator {
     const depthIncrement = firstRow.itemOrientation === 'length' ? baseDims.length : baseDims.width;
     const maxDepthPositions = Math.floor(containerDims.length / depthIncrement);
 
+    // For back-to-front filling, calculate how many items fit across the width
+    const itemWidth = firstRow.itemOrientation === 'length' ? baseDims.width : baseDims.length;
+    const itemLength = firstRow.itemOrientation === 'length' ? baseDims.length : baseDims.width;
+    const itemRotation = firstRow.itemOrientation === 'length' ? 0 : 90;
+    const widthPositions = Math.floor(containerDims.width / itemWidth);
+
     // Back-to-front filling: iterate depth (X) first, then height (Y), then width (Z)
     for (let depthPos = 0; depthPos < maxDepthPositions; depthPos++) {
       const x = depthPos * depthIncrement;
@@ -244,32 +250,21 @@ export class PatternGenerator {
 
         if (y + baseDims.height > containerDims.height + 0.01) break;
 
-        let currentZ = 0;
+        // Place items across the width at this depth and layer
+        for (let widthPos = 0; widthPos < widthPositions; widthPos++) {
+          const z = widthPos * itemWidth;
 
-        for (const row of pattern.rows) {
-          const rowItemLength = row.itemOrientation === 'length' ? baseDims.length : baseDims.width;
-          const rowItemWidth = row.itemOrientation === 'length' ? baseDims.width : baseDims.length;
-          const rowRotation = row.itemOrientation === 'length' ? 0 : 90;
+          if (z + itemWidth > containerDims.width + 0.01) break;
 
-          if (currentZ + rowItemWidth > containerDims.width + 0.01) break;
-
-          for (let i = 0; i < row.itemsPerRow; i++) {
-            const z = currentZ + (i * rowItemWidth);
-
-            if (z + rowItemWidth > containerDims.width + 0.01) break;
-
-            slots.push({
-              position: { x, y, z },
-              dimensions: {
-                length: rowItemLength,
-                width: rowItemWidth,
-                height: baseDims.height
-              },
-              rotation: rowRotation
-            });
-          }
-
-          currentZ += row.rowWidth;
+          slots.push({
+            position: { x, y, z },
+            dimensions: {
+              length: itemLength,
+              width: itemWidth,
+              height: baseDims.height
+            },
+            rotation: itemRotation
+          });
         }
       }
     }
