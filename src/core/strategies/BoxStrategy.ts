@@ -17,9 +17,9 @@ export class BoxStrategy implements IPackingStrategy {
     const itemDims = item.dimensions;
     if (!itemDims) return null;
 
-    const tryPatternBased = placedItems.length === 0;
+    const tryPatternBased = placedItems.length === 0 || item.isPalletized;
 
-    if (tryPatternBased && !item.isPalletized) {
+    if (tryPatternBased) {
       const patternResult = this.tryPatternBasedPlacement(item, context);
       if (patternResult) return patternResult;
     }

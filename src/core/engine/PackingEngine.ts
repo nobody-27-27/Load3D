@@ -76,10 +76,12 @@ export class PackingEngine {
     const itemGroups = this.groupIdenticalItems(sortedItems);
 
     for (const group of itemGroups) {
-      if (this.config.enablePatternPacking &&
-          group.items.length >= this.config.minItemsForPatterns &&
-          (group.items[0].type === 'pallet' || group.items[0].type === 'box')) {
+      const isPalletizedGroup = group.items[0].isPalletized;
+      const shouldUsePatternPacking = this.config.enablePatternPacking &&
+        (group.items[0].type === 'pallet' || group.items[0].type === 'box') &&
+        (isPalletizedGroup || group.items.length >= this.config.minItemsForPatterns);
 
+      if (shouldUsePatternPacking) {
         const patternResult = this.tryPatternPackingForGroup(group.items, container, placedItems);
 
         if (patternResult.placed.length > 0) {
