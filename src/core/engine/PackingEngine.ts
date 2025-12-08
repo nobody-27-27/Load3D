@@ -163,10 +163,11 @@ export class PackingEngine {
     if (items.length === 0) return { placed: [], remaining: [] };
 
     const itemType = items[0].type;
+    const isPalletized = items[0].isPalletized;
 
     let evaluation = null;
 
-    if (itemType === 'pallet') {
+    if (itemType === 'pallet' || (itemType === 'box' && isPalletized)) {
       evaluation = PatternEvaluator.evaluatePalletPatterns(
         items,
         container,
