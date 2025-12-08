@@ -49,17 +49,23 @@ function PlacedItems() {
 
         if (hasPallet) {
           const palletDims = placedItem.item.palletDimensions!;
+          const itemDims = placedItem.item.dimensions!;
           const totalDims = placedItem.dimensions;
 
-          const palletFootprintLength = totalDims.length;
-          const palletFootprintWidth = totalDims.width;
-          const itemHeight = totalDims.height - palletDims.height;
+          const palletLength = palletDims.length;
+          const palletWidth = palletDims.width;
+          const boxLength = itemDims.length;
+          const boxWidth = itemDims.width;
+          const boxHeight = itemDims.height;
+
+          const boxOffsetX = (palletLength - boxLength) / 2;
+          const boxOffsetZ = (palletWidth - boxWidth) / 2;
 
           return (
             <group key={placedItem.itemId}>
               <Box
-                args={[palletFootprintLength, palletDims.height, palletFootprintWidth]}
-                position={[x + palletFootprintLength / 2, y + palletDims.height / 2, z + palletFootprintWidth / 2]}
+                args={[palletLength, palletDims.height, palletWidth]}
+                position={[x + palletLength / 2, y + palletDims.height / 2, z + palletWidth / 2]}
               >
                 <meshStandardMaterial
                   color="#8B4513"
@@ -68,11 +74,11 @@ function PlacedItems() {
                 />
               </Box>
               <Box
-                args={[palletFootprintLength, itemHeight, palletFootprintWidth]}
+                args={[boxLength, boxHeight, boxWidth]}
                 position={[
-                  x + palletFootprintLength / 2,
-                  y + palletDims.height + itemHeight / 2,
-                  z + palletFootprintWidth / 2
+                  x + boxOffsetX + boxLength / 2,
+                  y + palletDims.height + boxHeight / 2,
+                  z + boxOffsetZ + boxWidth / 2
                 ]}
               >
                 <meshStandardMaterial
