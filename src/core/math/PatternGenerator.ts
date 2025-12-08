@@ -221,31 +221,24 @@ export class PatternGenerator {
 
     const maxLayers = isPalletized ? 1 : Math.floor(containerDims.height / baseDims.height);
 
-    const firstRow = pattern.rows[0];
-    if (!firstRow) return slots;
+    let currentZ = 0;
 
-    const itemLength = firstRow.itemOrientation === 'length' ? baseDims.length : baseDims.width;
-    const itemWidth = firstRow.itemOrientation === 'length' ? baseDims.width : baseDims.length;
-    const rotation = firstRow.itemOrientation === 'length' ? 0 : 90;
+    for (const row of pattern.rows) {
+      const rowItemLength = row.itemOrientation === 'length' ? baseDims.length : baseDims.width;
+      const rowItemWidth = row.itemOrientation === 'length' ? baseDims.width : baseDims.length;
+      const rowRotation = row.itemOrientation === 'length' ? 0 : 90;
 
-    for (let i = 0; i < firstRow.itemsPerRow; i++) {
-      const x = i * itemLength;
+      if (currentZ + rowItemWidth > containerDims.width + 0.01) break;
 
-      if (x + itemLength > containerDims.length + 0.01) break;
+      for (let layer = 0; layer < maxLayers; layer++) {
+        const y = layer * baseDims.height;
 
-      let currentZ = 0;
+        if (y + baseDims.height > containerDims.height + 0.01) break;
 
-      for (const row of pattern.rows) {
-        const rowItemLength = row.itemOrientation === 'length' ? baseDims.length : baseDims.width;
-        const rowItemWidth = row.itemOrientation === 'length' ? baseDims.width : baseDims.length;
-        const rowRotation = row.itemOrientation === 'length' ? 0 : 90;
+        for (let i = 0; i < row.itemsPerRow; i++) {
+          const x = i * rowItemLength;
 
-        if (currentZ + rowItemWidth > containerDims.width + 0.01) break;
-
-        for (let layer = 0; layer < maxLayers; layer++) {
-          const y = layer * baseDims.height;
-
-          if (y + baseDims.height > containerDims.height + 0.01) break;
+          if (x + rowItemLength > containerDims.length + 0.01) break;
 
           slots.push({
             position: { x, y, z: currentZ },
@@ -257,9 +250,9 @@ export class PatternGenerator {
             rotation: rowRotation
           });
         }
-
-        currentZ += row.rowWidth;
       }
+
+      currentZ += row.rowWidth;
     }
 
     return slots;
