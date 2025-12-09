@@ -22,7 +22,6 @@ export class RollStrategy implements IPackingStrategy {
   ): { position: IVector3; rotation: number; orientation: string; dimensions: IDimensions } | null {
     const { container, placedItems } = context;
     
-    // 1. Dimensions
     let rollDiameter = 0;
     let rollLength = 0;
 
@@ -44,28 +43,25 @@ export class RollStrategy implements IPackingStrategy {
 
     const orientations = this.getOrientations(rollDiameter, rollLength, item.isPalletized);
 
-    // 2. Candidate Points
-    // We pass a slightly larger radius to generation to create "breathing room" in calculations,
-    // ensuring the point isn't technically colliding before we even check.
+    // Generate Candidate Points (Standard Corners + Hexagonal Grooves)
     const candidatePoints = this.generateCandidatePoints(placedItems, container.dimensions, rollDiameter);
 
-    // 3. Find Best Fit
+    // Find Best Fit
     for (const point of candidatePoints) {
       for (const orient of orientations) {
         
-        // LOGIC FIX:
-        // If it's a 'groove' point, it is mathematically calculated to be perfect.
-        // DO NOT Nudge it. Nudging destroys the hex pattern.
-        // If it's a 'corner' point, we can try to nudge it to fit better.
-        
         let finalPos: IVector3 | null = null;
 
+        // STRATEGY FIX: 
+        // If it's a 'groove' point, it is mathematically perfect for nesting.
+        // Do NOT try to nudge/optimize it, as that breaks the hex pattern.
+        // Just check if it fits.
         if (point.type === 'groove') {
              if (this.canPlaceAt(null, point.position, orient, context)) {
                  finalPos = point.position;
              }
         } else {
-             // Try normal place, then Nudge
+             // For standard grid corners, try to nudge (gravity slide)
              finalPos = this.tryNudgePosition(point.position, orient, context);
         }
 
@@ -94,11 +90,12 @@ export class RollStrategy implements IPackingStrategy {
     return null;
   }
 
+  // Slide the item towards 0,0,0 to close gaps in grid layout
   private optimizeCoordinate(pos: IVector3, orient: OrientationOption, context: IPackingContext): IVector3 {
     let bestPos = { ...pos };
     const step = 0.05; 
     
-    // Backward (Z)
+    // Back (Z)
     while (bestPos.z - step >= 0) {
       const testPos = { ...bestPos, z: bestPos.z - step };
       if (this.canPlaceAt(null, testPos, orient, context)) {
@@ -157,22 +154,26 @@ export class RollStrategy implements IPackingStrategy {
     const pointSet = new Set<string>();
 
     const addPoint = (x: number, y: number, z: number, type: 'corner' | 'groove') => {
+      // Basic Container Bounds Check
       if (x < 0 || y < 0 || z < 0) return;
       if (x > containerDims.length || y > containerDims.height || z > containerDims.width) return;
 
       const key = `${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`;
       if (!pointSet.has(key)) {
         pointSet.add(key);
+        
         let score = (y * 10000) + (z * 100) + x;
-        // Massive bonus for groove points to ensure they are checked FIRST
+        // CRITICAL PRIORITY:
+        // Give Groove points a massive negative score so they are ALWAYS processed before Corner points.
+        // This forces the "honeycomb" logic to trigger first.
         if (type === 'groove') score -= 50000; 
         
         points.push({ position: { x, y, z }, score, type });
       }
     };
 
+    // 1. Grid Points
     addPoint(0, 0, 0, 'corner');
-
     for (const item of placedItems) {
       const pos = item.position;
       const dim = item.dimensions;
@@ -182,13 +183,9 @@ export class RollStrategy implements IPackingStrategy {
       addPoint(pos.x + dim.length, pos.y, pos.z + dim.width, 'corner'); 
     }
 
-    // Groove Logic
+    // 2. Hex/Groove Points
     const rolls = placedItems.filter(i => i.item.type === 'roll');
     const targetRadius = currentDiameter / 2;
-    // Add a tiny buffer to calculation to ensure the generated point 
-    // is slightly separated from neighbors, avoiding "exact overlap" issues.
-    // The Collision Logic allows 0.002 overlap, so 0.001 buffer is safe.
-    const CALC_BUFFER = 0.001; 
 
     for (let i = 0; i < rolls.length; i++) {
       for (let j = i + 1; j < rolls.length; j++) {
@@ -200,20 +197,19 @@ export class RollStrategy implements IPackingStrategy {
         const radius1 = (r1.orientation === 'vertical' ? r1.dimensions.length : r1.dimensions.height) / 2;
         const radius2 = (r2.orientation === 'vertical' ? r2.dimensions.length : r2.dimensions.height) / 2;
 
-        const effR1 = radius1 + CALC_BUFFER;
-        const effR2 = radius2 + CALC_BUFFER;
-        const effTarget = targetRadius + CALC_BUFFER;
-
         // -- VERTICAL GROOVES --
         if (r1.orientation === 'vertical') {
             if (Math.abs(r1.position.y - r2.position.y) < 0.1) {
+                // Centers
                 const c1 = { x: r1.position.x + radius1, z: r1.position.z + radius1 };
                 const c2 = { x: r2.position.x + radius2, z: r2.position.z + radius2 };
                 const dist = Math.sqrt((c1.x - c2.x)**2 + (c1.z - c2.z)**2);
                 
-                if (dist < (effR1 + effTarget + effR2 + effTarget)) {
-                    const intersect = this.calculateCircleIntersection(c1.x, c1.z, effR1 + effTarget, c2.x, c2.z, effR2 + effTarget);
+                // If they are neighbors (distance approx sum of radii)
+                if (dist < (radius1 + targetRadius + radius2 + targetRadius)) {
+                    const intersect = this.calculateCircleIntersection(c1.x, c1.z, radius1 + targetRadius, c2.x, c2.z, radius2 + targetRadius);
                     if (intersect) {
+                        // Returns 2 possible points. Try both.
                         addPoint(intersect.x1 - targetRadius, r1.position.y, intersect.y1 - targetRadius, 'groove');
                         addPoint(intersect.x2 - targetRadius, r1.position.y, intersect.y2 - targetRadius, 'groove');
                     }
@@ -232,8 +228,8 @@ export class RollStrategy implements IPackingStrategy {
                     const c2 = { a: r2.position.y + radius2, b: r2.position.z + radius2 };
                     const dist = Math.sqrt((c1.a - c2.a)**2 + (c1.b - c2.b)**2);
                     
-                    if (dist < (effR1 + effTarget + effR2 + effTarget)) {
-                        const intersect = this.calculateCircleIntersection(c1.a, c1.b, effR1 + effTarget, c2.a, c2.b, effR2 + effTarget);
+                    if (dist < (radius1 + targetRadius + radius2 + targetRadius)) {
+                        const intersect = this.calculateCircleIntersection(c1.a, c1.b, radius1 + targetRadius, c2.a, c2.b, radius2 + targetRadius);
                         if (intersect) {
                             const validX = Math.max(r1.position.x, r2.position.x);
                             addPoint(validX, intersect.x1 - targetRadius, intersect.y1 - targetRadius, 'groove');
@@ -245,8 +241,8 @@ export class RollStrategy implements IPackingStrategy {
                     const c2 = { a: r2.position.x + radius2, b: r2.position.y + radius2 };
                     const dist = Math.sqrt((c1.a - c2.a)**2 + (c1.b - c2.b)**2);
                     
-                    if (dist < (effR1 + effTarget + effR2 + effTarget)) {
-                        const intersect = this.calculateCircleIntersection(c1.a, c1.b, effR1 + effTarget, c2.a, c2.b, effR2 + effTarget);
+                    if (dist < (radius1 + targetRadius + radius2 + targetRadius)) {
+                        const intersect = this.calculateCircleIntersection(c1.a, c1.b, radius1 + targetRadius, c2.a, c2.b, radius2 + targetRadius);
                         if (intersect) {
                             const validZ = Math.max(r1.position.z, r2.position.z);
                             addPoint(intersect.x1 - targetRadius, intersect.y1 - targetRadius, validZ, 'groove');
@@ -293,8 +289,10 @@ export class RollStrategy implements IPackingStrategy {
     const dimensions = orient.dimensions;
     const orientationType = orient.orientation;
 
+    // 1. Boundary
     if (!GeometryUtils.isWithinBounds(pos, dimensions, container.dimensions)) return false;
 
+    // 2. Intersection
     for (const other of placedItems) {
       if (GeometryUtils.checkIntersection(
           pos, dimensions, 
@@ -306,9 +304,11 @@ export class RollStrategy implements IPackingStrategy {
       }
     }
 
+    // 3. Support Check
     if (pos.y > 0.01) {
       if (!this.hasSufficientSupport(pos, dimensions, orientationType, placedItems)) return false;
       
+      // Vertical on Horizontal Check
       if (orientationType === 'vertical') {
         const supportingItems = this.getSupportingItems(pos, dimensions, placedItems);
         for (const support of supportingItems) {
@@ -352,7 +352,7 @@ export class RollStrategy implements IPackingStrategy {
     const supportingItems = this.getSupportingItems(pos, dims, placedItems);
     if (supportingItems.length === 0) return false;
 
-    // BOX Support
+    // Box Support Check
     const isSittingOnBox = supportingItems.some(i => i.item.type !== 'roll');
     if (isSittingOnBox) {
         let supportedArea = 0;
@@ -365,7 +365,7 @@ export class RollStrategy implements IPackingStrategy {
         return (supportedArea / itemArea) > 0.5;
     }
 
-    // ROLL Support (Bridge/Groove Logic)
+    // Roll Bridge Support Check
     let contactCount = 0;
     const myRadius = (orientation === 'vertical' ? dims.length : dims.height) / 2;
     
@@ -395,8 +395,7 @@ export class RollStrategy implements IPackingStrategy {
             const dist = Math.sqrt((myCenter.a - supportCenter.a)**2 + (myCenter.b - supportCenter.b)**2);
             const optimalDist = myRadius + supportRadius;
             
-            // Increased tolerance for "Bridge" support.
-            // Even if there is a 2cm gap, we consider it supported if it's in a groove configuration.
+            // Allow loose tolerance for support validation
             if (Math.abs(dist - optimalDist) < 0.25) {
                 contactCount++;
             }
