@@ -22,7 +22,7 @@ export class RollStrategy implements IPackingStrategy {
   ): { position: IVector3; rotation: number; orientation: string; dimensions: IDimensions } | null {
     const { container, placedItems } = context;
     
-    // 1. Determine Dimensions
+    // 1. Boyutları Belirle
     let rollDiameter = 0;
     let rollLength = 0;
 
@@ -44,19 +44,21 @@ export class RollStrategy implements IPackingStrategy {
 
     const orientations = this.getOrientations(rollDiameter, rollLength, item.isPalletized);
 
-    // 2. Generate Candidate Points (Includes Grooves for both vertical and horizontal)
-    const candidatePoints = this.generateCandidatePoints(placedItems, container.dimensions, rollDiameter, rollLength);
+    // 2. Aday Noktaları Oluştur (Köşeler + Oyuklar)
+    const candidatePoints = this.generateCandidatePoints(placedItems, container.dimensions, rollDiameter);
 
-    // 3. Find Best Fit
+    // 3. En iyi pozisyonu bul
+    // Optimization: Puan sırasına göre deniyoruz
     for (const point of candidatePoints) {
       for (const orient of orientations) {
         
-        // Groove noktaları genellikle belirli bir oryantasyon için hesaplanır.
-        // Eğer nokta 'vertical groove' ise oraya yatay koymak mantıksız olabilir, ama yine de deneriz.
-        
-        if (this.canPlaceAt(item, point.position, orient, context)) {
+        // NUDGE LOGIC: İlk hesaplanan noktaya sığmıyorsa veya tam oturmuyorsa,
+        // geriye/sola doğru milimetrik kaydırarak sıkıştırmayı dene.
+        const optimizedPos = this.tryNudgePosition(point.position, orient, context);
+
+        if (optimizedPos) {
            return {
-             position: point.position,
+             position: optimizedPos,
              rotation: orient.rotation,
              orientation: orient.orientation,
              dimensions: orient.dimensions
@@ -66,6 +68,47 @@ export class RollStrategy implements IPackingStrategy {
     }
 
     return null;
+  }
+
+  private tryNudgePosition(
+    startPos: IVector3,
+    orient: OrientationOption,
+    context: IPackingContext
+  ): IVector3 | null {
+    // Önce orijinal noktayı dene
+    if (this.canPlaceAt(null, startPos, orient, context)) {
+      // Eğer orijinal nokta geçerliyse, daha da sıkıştırmayı dene (Gravity effect)
+      // Özellikle X ve Z ekseninde geriye çekerek boşlukları kapat
+      return this.optimizeCoordinate(startPos, orient, context);
+    }
+    return null;
+  }
+
+  private optimizeCoordinate(pos: IVector3, orient: OrientationOption, context: IPackingContext): IVector3 {
+    let bestPos = { ...pos };
+    const step = 0.05; // 5cm adımlarla sıkıştırma dene
+    
+    // Z ekseninde (derinlik) geri çekmeyi dene
+    while (bestPos.z - step >= 0) {
+      const testPos = { ...bestPos, z: bestPos.z - step };
+      if (this.canPlaceAt(null, testPos, orient, context)) {
+        bestPos = testPos;
+      } else {
+        break; // Daha fazla geri gidemiyor
+      }
+    }
+
+    // X ekseninde (genişlik) sola çekmeyi dene
+    while (bestPos.x - step >= 0) {
+      const testPos = { ...bestPos, x: bestPos.x - step };
+      if (this.canPlaceAt(null, testPos, orient, context)) {
+        bestPos = testPos;
+      } else {
+        break;
+      }
+    }
+
+    return bestPos;
   }
 
   private getOrientations(diameter: number, length: number, isPalletized?: boolean): OrientationOption[] {
@@ -99,8 +142,7 @@ export class RollStrategy implements IPackingStrategy {
   private generateCandidatePoints(
     placedItems: IPlacedItem[], 
     containerDims: IDimensions,
-    rollDiameter: number,
-    rollLength: number
+    currentDiameter: number
   ): CandidatePoint[] {
     const points: CandidatePoint[] = [];
     const pointSet = new Set<string>();
@@ -113,9 +155,9 @@ export class RollStrategy implements IPackingStrategy {
       if (!pointSet.has(key)) {
         pointSet.add(key);
         // Score: Lowest Y > Lowest Z > Lowest X
-        // Groove bonus (-50) to prioritize nesting
         let score = (y * 10000) + (z * 100) + x;
-        if (type === 'groove') score -= 50; 
+        // Oyuklara öncelik ver
+        if (type === 'groove') score -= 2000; 
         
         points.push({ position: { x, y, z }, score, type });
       }
@@ -132,12 +174,14 @@ export class RollStrategy implements IPackingStrategy {
       addPoint(pos.x + dim.length, pos.y, pos.z, 'corner'); 
       addPoint(pos.x, pos.y, pos.z + dim.width, 'corner'); 
       addPoint(pos.x, pos.y + dim.height, pos.z, 'corner'); 
+      
+      // L-shape corners
       addPoint(pos.x + dim.length, pos.y, pos.z + dim.width, 'corner'); 
     }
 
-    // 3. Groove Points (Hexagonal / Nesting Logic)
+    // 3. Groove Points (Hexagonal Logic)
     const rolls = placedItems.filter(i => i.item.type === 'roll');
-    const targetRadius = rollDiameter / 2;
+    const targetRadius = currentDiameter / 2;
 
     for (let i = 0; i < rolls.length; i++) {
       for (let j = i + 1; j < rolls.length; j++) {
@@ -151,15 +195,13 @@ export class RollStrategy implements IPackingStrategy {
 
         // -- VERTICAL GROOVES --
         if (r1.orientation === 'vertical') {
-            // Must be on similar Y level (floor mates)
             if (Math.abs(r1.position.y - r2.position.y) < 0.1) {
-                // Calc centers in X-Z
+                // Centers
                 const c1 = { x: r1.position.x + radius1, z: r1.position.z + radius1 };
                 const c2 = { x: r2.position.x + radius2, z: r2.position.z + radius2 };
-                
                 const dist = Math.sqrt((c1.x - c2.x)**2 + (c1.z - c2.z)**2);
                 
-                // Max allowed distance to span a bridge
+                // Nesting Distance Check
                 if (dist < (radius1 + targetRadius + radius2 + targetRadius)) {
                     const intersect = this.calculateCircleIntersection(c1.x, c1.z, radius1 + targetRadius, c2.x, c2.z, radius2 + targetRadius);
                     if (intersect) {
@@ -169,61 +211,43 @@ export class RollStrategy implements IPackingStrategy {
                 }
             }
         }
-        // -- HORIZONTAL GROOVES (Log Stacking) --
-        else if (r1.orientation === 'horizontal') {
-            // Determine axis (X or Z)
-            const isXAligned = r1.dimensions.length > r1.dimensions.width; 
-            const isXAligned2 = r2.dimensions.length > r2.dimensions.width;
-            
-            if (isXAligned !== isXAligned2) continue; // Must be same alignment
+        // -- HORIZONTAL GROOVES --
+        else {
+             const isXAxis = r1.dimensions.length > r1.dimensions.width;
+             const isXAxis2 = r2.dimensions.length > r2.dimensions.width;
+             if (isXAxis !== isXAxis2) continue;
 
-            // Check if they are side-by-side on the same level
-            // For X-Aligned: Side-by-side means different Z, same Y
-            // For Z-Aligned: Side-by-side means different X, same Y
-            
-            if (Math.abs(r1.position.y - r2.position.y) < 0.1) {
-                if (isXAligned) {
-                    // X-Aligned Rolls: Cross section is Y-Z plane.
-                    // Centers are at (y + r, z + r)
-                    const c1 = { a: r1.position.y + radius1, b: r1.position.z + radius1 }; // Y, Z
+             if (Math.abs(r1.position.y - r2.position.y) < 0.1) {
+                 if (isXAxis) {
+                    // Y-Z Plane
+                    const c1 = { a: r1.position.y + radius1, b: r1.position.z + radius1 };
                     const c2 = { a: r2.position.y + radius2, b: r2.position.z + radius2 };
-                    
                     const dist = Math.sqrt((c1.a - c2.a)**2 + (c1.b - c2.b)**2);
-
+                    
                     if (dist < (radius1 + targetRadius + radius2 + targetRadius)) {
-                        // Intersection gives (Y, Z) coords
                         const intersect = this.calculateCircleIntersection(c1.a, c1.b, radius1 + targetRadius, c2.a, c2.b, radius2 + targetRadius);
                         if (intersect) {
-                            // Convert back to 3D pos. 
-                            // X is flexible, try aligning with one of the rolls
                             const validX = Math.max(r1.position.x, r2.position.x);
-                            
-                            // Result 1: (Y, Z) -> need to subtract radius to get corner pos
                             addPoint(validX, intersect.x1 - targetRadius, intersect.y1 - targetRadius, 'groove');
-                            // Result 2
                             addPoint(validX, intersect.x2 - targetRadius, intersect.y2 - targetRadius, 'groove');
                         }
                     }
-                } else {
-                    // Z-Aligned Rolls: Cross section is X-Y plane
-                    // Centers are at (x + r, y + r)
-                    const c1 = { a: r1.position.x + radius1, b: r1.position.y + radius1 }; // X, Y
+                 } else {
+                    // X-Y Plane
+                    const c1 = { a: r1.position.x + radius1, b: r1.position.y + radius1 };
                     const c2 = { a: r2.position.x + radius2, b: r2.position.y + radius2 };
-
                     const dist = Math.sqrt((c1.a - c2.a)**2 + (c1.b - c2.b)**2);
-
+                    
                     if (dist < (radius1 + targetRadius + radius2 + targetRadius)) {
                         const intersect = this.calculateCircleIntersection(c1.a, c1.b, radius1 + targetRadius, c2.a, c2.b, radius2 + targetRadius);
                         if (intersect) {
                             const validZ = Math.max(r1.position.z, r2.position.z);
-                            // Result 1 (X, Y)
                             addPoint(intersect.x1 - targetRadius, intersect.y1 - targetRadius, validZ, 'groove');
-                            // Result 2
                             addPoint(intersect.x2 - targetRadius, intersect.y2 - targetRadius, validZ, 'groove');
                         }
                     }
-                }
-            }
+                 }
+             }
         }
       }
     }
@@ -253,7 +277,7 @@ export class RollStrategy implements IPackingStrategy {
   }
 
   canPlaceAt(
-    item: ICargoItem, 
+    item: ICargoItem | null, // null check allows using method for validation only
     pos: IVector3, 
     orient: OrientationOption,
     context: IPackingContext
@@ -263,9 +287,7 @@ export class RollStrategy implements IPackingStrategy {
     const orientationType = orient.orientation;
 
     // 1. Boundary
-    if (!GeometryUtils.isWithinBounds(pos, dimensions, container.dimensions)) {
-      return false;
-    }
+    if (!GeometryUtils.isWithinBounds(pos, dimensions, container.dimensions)) return false;
 
     // 2. Intersection
     for (const other of placedItems) {
@@ -279,18 +301,16 @@ export class RollStrategy implements IPackingStrategy {
       }
     }
 
-    // 3. Support & Stability
+    // 3. Support
     if (pos.y > 0.01) {
-      if (!this.hasSufficientSupport(pos, dimensions, orientationType, placedItems)) {
-        return false;
-      }
-
-      // Rule: No Vertical on Horizontal
+      if (!this.hasSufficientSupport(pos, dimensions, orientationType, placedItems)) return false;
+      
+      // Kural: Yatay üzerine Dik konulamaz
       if (orientationType === 'vertical') {
         const supportingItems = this.getSupportingItems(pos, dimensions, placedItems);
         for (const support of supportingItems) {
           if (support.item.type === 'roll' && support.orientation === 'horizontal') {
-            return false;
+             return false;
           }
         }
       }
@@ -301,16 +321,13 @@ export class RollStrategy implements IPackingStrategy {
 
   private getSupportingItems(pos: IVector3, dims: IDimensions, placedItems: IPlacedItem[]): IPlacedItem[] {
     const supports: IPlacedItem[] = [];
-    const epsilon = 0.05; // Slightly larger tolerance for finding neighbors
+    const epsilon = 0.05;
     const bottomY = pos.y;
 
     for (const item of placedItems) {
       const itemTop = item.position.y + item.dimensions.height;
-      
-      // Vertical proximity check
-      if (Math.abs(itemTop - bottomY) < epsilon || (itemTop > bottomY && itemTop < bottomY + dims.height)) {
-          // Check horizontal proximity (are they close enough to touch?)
-          // We use a simplified expanded AABB check for "potential support"
+      if (Math.abs(itemTop - bottomY) < epsilon) {
+          // Expanded AABB check for potential support
           if (GeometryUtils.checkAABBIntersection(
               { x: pos.x - epsilon, y: 0, z: pos.z - epsilon }, 
               { length: dims.length + epsilon*2, width: dims.width + epsilon*2, height: 1 },
@@ -333,11 +350,9 @@ export class RollStrategy implements IPackingStrategy {
     const supportingItems = this.getSupportingItems(pos, dims, placedItems);
     if (supportingItems.length === 0) return false;
 
-    // -- BOX Logic (or Pallet) --
-    // If sitting on a box, we need area support.
+    // Kutu üzerindeyse alan hesabı
     const isSittingOnBox = supportingItems.some(i => i.item.type !== 'roll');
     if (isSittingOnBox) {
-        // Calculate overlap area
         let supportedArea = 0;
         const itemArea = dims.length * dims.width;
         for (const support of supportingItems) {
@@ -348,38 +363,28 @@ export class RollStrategy implements IPackingStrategy {
         return (supportedArea / itemArea) > 0.5;
     }
 
-    // -- ROLL on ROLL Logic (Bridge Support) --
-    // If sitting on other rolls, we check for "Points of Contact".
-    // A cylinder is stable if it rests on at least 2 other cylinders (Groove) 
-    // OR directly on top of 1 cylinder (Columnar - less ideal but valid).
-    
-    // We count "Solid Contacts"
+    // Rulo üzerindeyse "Temas Noktası" (Contact Point) Sayısı
     let contactCount = 0;
-    
-    // Define the "Axis" of our current candidate roll
     const myRadius = (orientation === 'vertical' ? dims.length : dims.height) / 2;
-    // Center of the roll cross-section
+    
+    // Merkez hesabı
     let myCenter: {a: number, b: number}; 
-    if (orientation === 'vertical') myCenter = { a: pos.x + myRadius, b: pos.z + myRadius }; // X-Z plane
-    else if (dims.length > dims.width) myCenter = { a: pos.y + myRadius, b: pos.z + myRadius }; // Y-Z plane
-    else myCenter = { a: pos.x + myRadius, b: pos.y + myRadius }; // X-Y plane
+    if (orientation === 'vertical') myCenter = { a: pos.x + myRadius, b: pos.z + myRadius }; 
+    else if (dims.length > dims.width) myCenter = { a: pos.y + myRadius, b: pos.z + myRadius }; 
+    else myCenter = { a: pos.x + myRadius, b: pos.y + myRadius };
 
     for (const support of supportingItems) {
         if (support.item.type === 'roll') {
-            // Check geometric distance to confirm actual touch/support
-            // This prevents "floating" over a gap if the gap is too wide
-            // Logic: distance between centers approx sum of radii
-            
             const supportRadius = (support.orientation === 'vertical' ? support.dimensions.length : support.dimensions.height) / 2;
             let supportCenter: {a: number, b: number};
 
+            // Hizalama kontrolü
             if (orientation === 'vertical' && support.orientation === 'vertical') {
                  supportCenter = { a: support.position.x + supportRadius, b: support.position.z + supportRadius };
             } else if (orientation === 'horizontal' && support.orientation === 'horizontal') {
-                 // Check alignment
                  const myAlign = dims.length > dims.width ? 'x' : 'z';
                  const supAlign = support.dimensions.length > support.dimensions.width ? 'x' : 'z';
-                 if (myAlign !== supAlign) continue; // Perpendicular support is tricky, ignore for bridge count for now
+                 if (myAlign !== supAlign) continue;
 
                  if (myAlign === 'x') supportCenter = { a: support.position.y + supportRadius, b: support.position.z + supportRadius };
                  else supportCenter = { a: support.position.x + supportRadius, b: support.position.y + supportRadius };
@@ -388,17 +393,15 @@ export class RollStrategy implements IPackingStrategy {
             }
 
             const dist = Math.sqrt((myCenter.a - supportCenter.a)**2 + (myCenter.b - supportCenter.b)**2);
-            const optimalDist = myRadius + supportRadius;
-            
-            // Allow small error (epsilon) for touching
-            if (Math.abs(dist - optimalDist) < 0.1) {
+            // Toleransı biraz artırarak teması kolaylaştır
+            if (Math.abs(dist - (myRadius + supportRadius)) < 0.15) {
                 contactCount++;
             }
         }
     }
 
-    // If we have at least 2 contact points, it's a stable groove placement.
-    // If we have 1 contact point, it's a columnar stack (also valid).
+    // Tek bir rulo üzerine de (kule gibi) konulabilir, 
+    // veya iki rulo arasına (oyuk) da konulabilir.
     return contactCount >= 1;
   }
 }
