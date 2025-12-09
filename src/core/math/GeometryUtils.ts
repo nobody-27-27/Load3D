@@ -18,7 +18,7 @@ export class GeometryUtils {
     orientation1: RollOrientation = 'vertical',
     orientation2: RollOrientation = 'vertical'
   ): boolean {
-    // 1. AABB Check (First line of defense)
+    // 1. AABB Check (First line of defense - Shared logic)
     if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
       return false;
     }
@@ -30,7 +30,6 @@ export class GeometryUtils {
     }
 
     // --- ROLL SPECIFIC LOGIC ---
-    
     if (item1Type === 'roll' && item2Type === 'roll') {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
@@ -106,9 +105,8 @@ export class GeometryUtils {
         const c2z = pos2.z + r2;
         
         const distSq = (c1x - c2x) ** 2 + (c1z - c2z) ** 2;
-        
-        // Logic: Collision only if centers are closer than (SumRadii - Tolerance)
         const minAllowedDist = r1 + r2 - ALLOWED_OVERLAP;
+        
         return distSq < minAllowedDist * minAllowedDist;
       } 
       else {
@@ -149,7 +147,6 @@ export class GeometryUtils {
       }
     }
     
-    // Default safe fallback
     return true; 
   }
 
