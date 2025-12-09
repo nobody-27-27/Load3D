@@ -1,6 +1,7 @@
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Grid, Box } from '@react-three/drei';
+import { OrbitControls, Grid, Box, Cylinder } from '@react-three/drei';
 import { useLoadingStore } from '../store/useLoadingStore';
+import type { IPlacedItem, ICargoItem } from '../core/types';
 
 function Container() {
   const container = useLoadingStore((state) => state.container);
@@ -34,6 +35,83 @@ function Container() {
   );
 }
 
+function RenderPlacedItem({ item: placedItem }: { item: IPlacedItem }) {
+  const { x, y, z } = placedItem.position;
+  const cargo = placedItem.item;
+  const isRoll = cargo.type === 'roll';
+  const color = cargo.color || '#10b981';
+
+  // Handle Palletized Items
+  if (cargo.palletDimensions) {
+    const palletDims = cargo.palletDimensions!;
+    const itemDims = placedItem.dimensions; 
+    
+    // Render simplified Pallet block for now (base)
+    // You can enhance this to render pallet + roll separately if needed
+    return (
+      <Box 
+        args={[itemDims.length, itemDims.height, itemDims.width]}
+        position={[x + itemDims.length/2, y + itemDims.height/2, z + itemDims.width/2]}
+      >
+         <meshStandardMaterial color={color} transparent opacity={0.8} />
+      </Box>
+    );
+  }
+
+  // Render Cylinder (Roll)
+  if (isRoll) {
+    const orientation = placedItem.orientation || 'vertical';
+    const dims = placedItem.dimensions;
+    
+    // Calculate visualization parameters
+    let radius, heightVal, rotation: [number, number, number];
+    
+    if (orientation === 'vertical') {
+      radius = dims.length / 2;
+      heightVal = dims.height;
+      rotation = [0, 0, 0];
+    } else {
+      // Horizontal
+      // If dims.length > dims.width, likely X-aligned
+      const isXAligned = dims.length > dims.width;
+      radius = dims.height / 2; 
+      heightVal = isXAligned ? dims.length : dims.width;
+      
+      rotation = isXAligned ? [0, 0, Math.PI / 2] : [Math.PI / 2, 0, 0];
+    }
+
+    // Position correction for Three.js centering
+    const centerX = x + dims.length / 2;
+    const centerY = y + dims.height / 2;
+    const centerZ = z + dims.width / 2;
+
+    return (
+      <Cylinder
+        args={[radius, radius, heightVal, 32]}
+        position={[centerX, centerY, centerZ]}
+        rotation={rotation}
+      >
+        <meshStandardMaterial color={color} roughness={0.5} />
+      </Cylinder>
+    );
+  }
+
+  // Render Standard Box
+  const { length, width, height } = placedItem.dimensions;
+  return (
+    <Box
+      args={[length, height, width]}
+      position={[x + length / 2, y + height / 2, z + width / 2]}
+    >
+      <meshStandardMaterial
+        color={color}
+        transparent
+        opacity={0.8}
+      />
+    </Box>
+  );
+}
+
 function PlacedItems() {
   const loadingResult = useLoadingStore((state) => state.loadingResult);
 
@@ -43,69 +121,9 @@ function PlacedItems() {
 
   return (
     <group>
-      {loadingResult.placedItems.map((placedItem) => {
-        const { x, y, z } = placedItem.position;
-        const hasPallet = placedItem.item.palletDimensions !== undefined;
-
-        if (hasPallet) {
-          const palletDims = placedItem.item.palletDimensions!;
-          const itemDims = placedItem.item.dimensions!;
-          const isRotated = placedItem.rotation === 90 || placedItem.rotation === 270;
-
-          const palletLength = isRotated ? palletDims.width : palletDims.length;
-          const palletWidth = isRotated ? palletDims.length : palletDims.width;
-          const boxLength = isRotated ? itemDims.width : itemDims.length;
-          const boxWidth = isRotated ? itemDims.length : itemDims.width;
-          const boxHeight = itemDims.height;
-
-          const boxOffsetX = (palletLength - boxLength) / 2;
-          const boxOffsetZ = (palletWidth - boxWidth) / 2;
-
-          return (
-            <group key={placedItem.itemId}>
-              <Box
-                args={[palletLength, palletDims.height, palletWidth]}
-                position={[x + palletLength / 2, y + palletDims.height / 2, z + palletWidth / 2]}
-              >
-                <meshStandardMaterial
-                  color="#8B4513"
-                  roughness={0.8}
-                  metalness={0.2}
-                />
-              </Box>
-              <Box
-                args={[boxLength, boxHeight, boxWidth]}
-                position={[
-                  x + boxOffsetX + boxLength / 2,
-                  y + palletDims.height + boxHeight / 2,
-                  z + boxOffsetZ + boxWidth / 2
-                ]}
-              >
-                <meshStandardMaterial
-                  color={placedItem.item.color || '#10b981'}
-                  transparent
-                  opacity={0.8}
-                />
-              </Box>
-            </group>
-          );
-        }
-
-        const { length, width, height } = placedItem.dimensions;
-        return (
-          <Box
-            key={placedItem.itemId}
-            args={[length, height, width]}
-            position={[x + length / 2, y + height / 2, z + width / 2]}
-          >
-            <meshStandardMaterial
-              color={placedItem.item.color || '#10b981'}
-              transparent
-              opacity={0.8}
-            />
-          </Box>
-        );
-      })}
+      {loadingResult.placedItems.map((placedItem) => (
+        <RenderPlacedItem key={placedItem.itemId} item={placedItem} />
+      ))}
     </group>
   );
 }
