@@ -4,8 +4,9 @@ export class GeometryUtils {
   private static readonly EPSILON = 0.001;
 
   /**
-   * Checks generic intersection between items.
-   * SAFEGUARD: If types are 'box' (default), it runs the exact original AABB logic.
+   * Checks intersection using exact shapes.
+   * SAFEGUARD: Boxes use strict AABB logic (Backward Compatible).
+   * Rolls use relaxed overlap logic to allow packing.
    */
   static checkIntersection(
     pos1: IVector3,
@@ -17,24 +18,23 @@ export class GeometryUtils {
     orientation1: RollOrientation = 'vertical',
     orientation2: RollOrientation = 'vertical'
   ): boolean {
-    // 1. AABB Check (Hızlı Eleme - Tüm tipler için geçerli ortak fizik kuralı)
+    // 1. AABB Check (First line of defense)
     if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
       return false;
     }
 
-    // BACKWARD COMPATIBILITY: If both are boxes, rely solely on AABB result (which is true here)
+    // SAFEGUARD: If both are boxes, rely strictly on AABB.
+    // This ensures we never break the existing box algorithm.
     if (item1Type === 'box' && item2Type === 'box') {
-      return true; 
+      return true; // Confirmed by AABB above
     }
 
-    // --- ROLL SPECIFIC LOGIC STARTS HERE ---
+    // --- ROLL LOGIC ---
     
-    // Cylinder - Cylinder Check
     if (item1Type === 'roll' && item2Type === 'roll') {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
 
-    // Mixed Check (Box vs Roll)
     if (item1Type === 'roll' && item2Type !== 'roll') {
       return this.checkBoxCylinderIntersection(pos2, dim2, pos1, dim1, orientation1);
     }
@@ -79,7 +79,7 @@ export class GeometryUtils {
     );
   }
 
-  // --- PRIVATE METHODS FOR ROLL MATH ---
+  // --- PRIVATE CYLINDER MATH ---
 
   private static checkCylinderCylinderIntersection(
     pos1: IVector3,
@@ -89,58 +89,53 @@ export class GeometryUtils {
     dim2: IDimensions,
     orient2: RollOrientation
   ): boolean {
-    // Toleransı biraz artırarak "sürtünme" payı bırakıyoruz
-    const ROLL_EPSILON = 0.0005;
+    // CRITICAL FIX: Allow 2mm overlap (soft body) to ensure "kissing" cylinders aren't rejected.
+    // This allows the hexagonal packing to work without floating point errors rejecting valid spots.
+    const ALLOWED_OVERLAP = 0.002; 
 
     if (orient1 === orient2) {
       // VERTICAL
       if (orient1 === 'vertical') {
-        // Y ekseninde çakışma yoksa çarpışma yoktur
         if (!this.checkIntervalOverlap(pos1.y, dim1.height, pos2.y, dim2.height)) return false;
         
         const r1 = dim1.length / 2;
         const r2 = dim2.length / 2;
-        // Merkezler (X, Z)
         const c1x = pos1.x + r1;
         const c1z = pos1.z + r1;
         const c2x = pos2.x + r2;
         const c2z = pos2.z + r2;
         
         const distSq = (c1x - c2x) ** 2 + (c1z - c2z) ** 2;
-        // Eğer mesafe yarıçaplar toplamından küçükse çarpışma vardır.
-        // Eşitse (temas) çarpışma yoktur.
-        // float hatası için epsilon çıkarıyoruz: (r1+r2-eps)^2
-        const minDist = r1 + r2 - ROLL_EPSILON;
-        return distSq < minDist * minDist;
+        
+        // Logic: Collision if distance < (sumRadii - overlap)
+        const minAllowedDist = r1 + r2 - ALLOWED_OVERLAP;
+        return distSq < minAllowedDist * minAllowedDist;
       } 
       // HORIZONTAL
       else {
-        // Hangi eksende uzandığını bulalım
         const isX1 = dim1.length > dim1.width;
         const isX2 = dim2.length > dim2.width;
 
         if (isX1 === isX2) {
-           // Aynı eksende yataylar
            const longAxisOverlap = isX1 
              ? this.checkIntervalOverlap(pos1.x, dim1.length, pos2.x, dim2.length)
              : this.checkIntervalOverlap(pos1.z, dim1.width, pos2.z, dim2.width);
            
            if (!longAxisOverlap) return false;
 
-           // Kesit alanı (Daire) kontrolü
            const r1 = dim1.height / 2;
            const r2 = dim2.height / 2;
            
            let distSq = 0;
            if (isX1) {
-             // Kesit Y-Z
+             // Section Y-Z
              const c1y = pos1.y + r1; 
              const c1z = pos1.z + r1;
              const c2y = pos2.y + r2; 
              const c2z = pos2.z + r2;
              distSq = (c1y - c2y) ** 2 + (c1z - c2z) ** 2;
            } else {
-             // Kesit X-Y
+             // Section X-Y
              const c1x = pos1.x + r1;
              const c1y = pos1.y + r1;
              const c2x = pos2.x + r2;
@@ -148,12 +143,14 @@ export class GeometryUtils {
              distSq = (c1x - c2x) ** 2 + (c1y - c2y) ** 2;
            }
 
-           const minDist = r1 + r2 - ROLL_EPSILON;
-           return distSq < minDist * minDist;
+           const minAllowedDist = r1 + r2 - ALLOWED_OVERLAP;
+           return distSq < minAllowedDist * minAllowedDist;
         }
       }
     }
-    return true; // Farklı oryantasyonlar için şimdilik güvenli çarpışma (AABB yeterliydi)
+    
+    // Perpendicular cases: Fallback to AABB (safe)
+    return true; 
   }
 
   private static checkBoxCylinderIntersection(
@@ -163,24 +160,22 @@ export class GeometryUtils {
     cylDim: IDimensions,
     cylOrient: RollOrientation
   ): boolean {
-    const ROLL_EPSILON = 0.0005;
+    const ALLOWED_OVERLAP = 0.002;
     const radius = (cylOrient === 'vertical' ? cylDim.length : cylDim.height) / 2;
     
     if (cylOrient === 'vertical') {
-       // Silindir Merkezi (X, Z)
        const cx = cylPos.x + radius;
        const cz = cylPos.z + radius;
        
-       // Kutu üzerinde silindir merkezine en yakın nokta (X, Z düzleminde)
        const clampedX = Math.max(boxPos.x, Math.min(cx, boxPos.x + boxDim.length));
        const clampedZ = Math.max(boxPos.z, Math.min(cz, boxPos.z + boxDim.width));
        
        const distSq = (cx - clampedX) ** 2 + (cz - clampedZ) ** 2;
-       
-       // Y ekseninde çakışma var mı?
        const yOverlap = this.checkIntervalOverlap(boxPos.y, boxDim.height, cylPos.y, cylDim.height);
        
-       return yOverlap && (distSq < (radius - ROLL_EPSILON) ** 2);
+       // Collision if distance to box is less than radius (minus overlap)
+       const minDist = radius - ALLOWED_OVERLAP;
+       return yOverlap && (distSq < minDist * minDist);
     } 
     else {
       // Horizontal
@@ -193,7 +188,9 @@ export class GeometryUtils {
           
           const distSq = (cy - clampedY) ** 2 + (cz - clampedZ) ** 2;
           const xOverlap = this.checkIntervalOverlap(boxPos.x, boxDim.length, cylPos.x, cylDim.length);
-          return xOverlap && (distSq < (radius - ROLL_EPSILON) ** 2);
+          
+          const minDist = radius - ALLOWED_OVERLAP;
+          return xOverlap && (distSq < minDist * minDist);
       } else {
           const cx = cylPos.x + radius;
           const cy = cylPos.y + radius;
@@ -202,7 +199,9 @@ export class GeometryUtils {
           
           const distSq = (cx - clampedX) ** 2 + (cy - clampedY) ** 2;
           const zOverlap = this.checkIntervalOverlap(boxPos.z, boxDim.width, cylPos.z, cylDim.width);
-          return zOverlap && (distSq < (radius - ROLL_EPSILON) ** 2);
+          
+          const minDist = radius - ALLOWED_OVERLAP;
+          return zOverlap && (distSq < minDist * minDist);
       }
     }
   }
