@@ -18,13 +18,12 @@ export class GeometryUtils {
     orientation1: RollOrientation = 'vertical',
     orientation2: RollOrientation = 'vertical'
   ): boolean {
-    // 1. AABB Check (First line of defense - Shared logic)
+    // 1. AABB Check (First line of defense)
     if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
       return false;
     }
 
     // SAFEGUARD: If both are boxes, rely strictly on AABB.
-    // This preserves the flawless functionality of the Box algorithms.
     if (item1Type === 'box' && item2Type === 'box') {
       return true; 
     }
@@ -88,8 +87,7 @@ export class GeometryUtils {
     dim2: IDimensions,
     orient2: RollOrientation
   ): boolean {
-    // AGGRESSIVE TOLERANCE: Allow up to 0.5cm overlap for packing calculations.
-    // This prevents "ghost collisions" when items are perfectly nested.
+    // AGGRESSIVE TOLERANCE: Allow 5mm overlap to ensure mathematical lattice points fit.
     const ALLOWED_OVERLAP = 0.005; 
 
     if (orient1 === orient2) {
@@ -98,7 +96,6 @@ export class GeometryUtils {
         
         const r1 = dim1.length / 2;
         const r2 = dim2.length / 2;
-        // Centers (X, Z)
         const c1x = pos1.x + r1;
         const c1z = pos1.z + r1;
         const c2x = pos2.x + r2;
@@ -110,7 +107,7 @@ export class GeometryUtils {
         return distSq < minAllowedDist * minAllowedDist;
       } 
       else {
-        // Horizontal
+        // Horizontal logic
         const isX1 = dim1.length > dim1.width;
         const isX2 = dim2.length > dim2.width;
 
@@ -125,19 +122,13 @@ export class GeometryUtils {
            const r2 = dim2.height / 2;
            
            let distSq = 0;
-           if (isX1) {
-             // Section Y-Z
-             const c1y = pos1.y + r1; 
-             const c1z = pos1.z + r1;
-             const c2y = pos2.y + r2; 
-             const c2z = pos2.z + r2;
+           if (isX1) { // Section Y-Z
+             const c1y = pos1.y + r1; const c1z = pos1.z + r1;
+             const c2y = pos2.y + r2; const c2z = pos2.z + r2;
              distSq = (c1y - c2y) ** 2 + (c1z - c2z) ** 2;
-           } else {
-             // Section X-Y
-             const c1x = pos1.x + r1;
-             const c1y = pos1.y + r1;
-             const c2x = pos2.x + r2;
-             const c2y = pos2.y + r2;
+           } else { // Section X-Y
+             const c1x = pos1.x + r1; const c1y = pos1.y + r1;
+             const c2x = pos2.x + r2; const c2y = pos2.y + r2;
              distSq = (c1x - c2x) ** 2 + (c1y - c2y) ** 2;
            }
 
@@ -146,7 +137,6 @@ export class GeometryUtils {
         }
       }
     }
-    
     return true; 
   }
 
@@ -163,39 +153,30 @@ export class GeometryUtils {
     if (cylOrient === 'vertical') {
        const cx = cylPos.x + radius;
        const cz = cylPos.z + radius;
-       
        const clampedX = Math.max(boxPos.x, Math.min(cx, boxPos.x + boxDim.length));
        const clampedZ = Math.max(boxPos.z, Math.min(cz, boxPos.z + boxDim.width));
-       
        const distSq = (cx - clampedX) ** 2 + (cz - clampedZ) ** 2;
        const yOverlap = this.checkIntervalOverlap(boxPos.y, boxDim.height, cylPos.y, cylDim.height);
-       
        const minDist = radius - ALLOWED_OVERLAP;
        return yOverlap && (distSq < minDist * minDist);
     } 
     else {
-      // Horizontal
+      // Horizontal checks...
       const isXAxis = cylDim.length > cylDim.width;
       if (isXAxis) {
-          const cy = cylPos.y + radius;
-          const cz = cylPos.z + radius;
+          const cy = cylPos.y + radius; const cz = cylPos.z + radius;
           const clampedY = Math.max(boxPos.y, Math.min(cy, boxPos.y + boxDim.height));
           const clampedZ = Math.max(boxPos.z, Math.min(cz, boxPos.z + boxDim.width));
-          
           const distSq = (cy - clampedY) ** 2 + (cz - clampedZ) ** 2;
           const xOverlap = this.checkIntervalOverlap(boxPos.x, boxDim.length, cylPos.x, cylDim.length);
-          
           const minDist = radius - ALLOWED_OVERLAP;
           return xOverlap && (distSq < minDist * minDist);
       } else {
-          const cx = cylPos.x + radius;
-          const cy = cylPos.y + radius;
+          const cx = cylPos.x + radius; const cy = cylPos.y + radius;
           const clampedX = Math.max(boxPos.x, Math.min(cx, boxPos.x + boxDim.length));
           const clampedY = Math.max(boxPos.y, Math.min(cy, boxPos.y + boxDim.height));
-          
           const distSq = (cx - clampedX) ** 2 + (cy - clampedY) ** 2;
           const zOverlap = this.checkIntervalOverlap(boxPos.z, boxDim.width, cylPos.z, cylDim.width);
-          
           const minDist = radius - ALLOWED_OVERLAP;
           return zOverlap && (distSq < minDist * minDist);
       }
