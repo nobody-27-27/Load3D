@@ -44,16 +44,15 @@ export class RollStrategy implements IPackingStrategy {
 
     const orientations = this.getOrientations(rollDiameter, rollLength, item.isPalletized);
 
-    // 2. Generate Points (Forces Lattice Logic)
+    // 2. Generate Points (Directional Lattice)
     const candidatePoints = this.generateCandidatePoints(placedItems, container.dimensions, rollDiameter, rollLength);
 
     // 3. Find Best Fit
     for (const point of candidatePoints) {
       for (const orient of orientations) {
         
-        // ZORUNLU PETEK NOKTALARI (LATTICE):
-        // Hesaplanan bu noktalar matematiksel olarak mükemmeldir.
-        // Asla "Nudge" (kaydırma) yapma, olduğu gibi kullan.
+        // PETEK NOKTALARI (LATTICE)
+        // Bu noktalar hassas hesaplanmıştır, kaydırma (Nudge) yapma.
         if (point.type === 'lattice') {
              if (this.canPlaceAt(null, point.position, orient, context)) {
                  return {
@@ -64,7 +63,7 @@ export class RollStrategy implements IPackingStrategy {
                  };
              }
         } else {
-             // Standart köşe noktaları için kaydırma (yerçekimi) dene
+             // Standart noktalar için kaydırma dene
              const finalPos = this.tryNudgePosition(point.position, orient, context);
              if (finalPos) {
                 return {
@@ -148,27 +147,22 @@ export class RollStrategy implements IPackingStrategy {
     const pointSet = new Set<string>();
 
     const addPoint = (x: number, y: number, z: number, type: 'corner' | 'groove' | 'lattice') => {
-      // Güvenlik sınırları
       if (x < -0.01 || y < -0.01 || z < -0.01) return;
       if (x > containerDims.length || y > containerDims.height || z > containerDims.width) return;
 
       const key = `${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`;
       if (!pointSet.has(key)) {
         pointSet.add(key);
-        
         let score = (y * 10000) + (z * 100) + x;
-        // LATTICE (Petek) noktalarına süper öncelik ver (-1 Milyon Puan)
-        // Böylece ızgara noktalarından önce kesinlikle bunlar denenecek.
-        if (type === 'lattice') score -= 1000000; 
-        
+        if (type === 'lattice') score -= 1000000; // En yüksek öncelik
         points.push({ position: { x, y, z }, score, type });
       }
     };
 
-    // 1. PETEK IZGARA NOKTALARINI ÜRET
-    this.generateFixedHexPoints(containerDims, currentDiameter, currentLength, addPoint);
+    // 1. ÇİFT YÖNLÜ PETEK DİZİLİMİ (Directional Lattice)
+    this.generateDirectionalLattice(containerDims, currentDiameter, currentLength, addPoint);
 
-    // 2. Standart Köşe Noktaları (Yedek olarak)
+    // 2. Standart Köşeler
     addPoint(0, 0, 0, 'corner');
     for (const item of placedItems) {
       const pos = item.position;
@@ -183,43 +177,59 @@ export class RollStrategy implements IPackingStrategy {
   }
 
   /**
-   * Matematiksel olarak kesin Petek (Hexagonal) koordinatlarını üretir.
+   * Hem X ekseninde hem Z ekseninde petek dizilimlerini dener.
+   * Bu sayede konteynerin enine veya boyuna göre en iyi sıkıştırmayı bulur.
    */
-  private generateFixedHexPoints(
+  private generateDirectionalLattice(
     container: IDimensions, 
     diameter: number, 
     length: number,
     addPoint: (x: number, y: number, z: number, type: 'lattice') => void
   ) {
     const radius = diameter / 2;
-    // Petek dizilimde satırlar arası mesafe: D * sin(60)
-    const rowHeight = diameter * 0.8660254; 
+    const hexStep = diameter * 0.8660254; // sin(60)*D
     
-    // Z ekseni boyunca satırlar, X ekseni boyunca sütunlar
-    const numRowsZ = Math.floor((container.width - diameter) / rowHeight) + 2;
-    const numColsX = Math.floor(container.length / diameter) + 2;
+    // YÖN 1: Satırlar Z ekseni boyunca (Mevcut mantık)
+    // Z ekseninde ilerler, X ekseninde zikzak yapar.
+    const zRows = Math.floor((container.width - diameter) / hexStep) + 2; 
+    const xCols = Math.floor(container.length / diameter) + 2;
 
-    for (let row = 0; row < numRowsZ; row++) {
-      // Z konumu
-      const z = row * rowHeight;
+    for (let row = 0; row < zRows; row++) {
+      const z = row * hexStep;
+      const xOffset = (row % 2 === 1) ? radius : 0;
       
-      // Tek numaralı satırları yarıçap kadar kaydır (Zigzag)
-      const isShifted = (row % 2 === 1);
-      const xOffset = isShifted ? radius : 0;
-      
-      for (let col = 0; col < numColsX; col++) {
+      for (let col = 0; col < xCols; col++) {
         const x = (col * diameter) + xOffset;
+        addPoint(x, 0, z, 'lattice'); // Zemin
         
-        // Zemin Noktası
-        addPoint(x, 0, z, 'lattice');
-
-        // Üst üste istifleme noktaları (Sütunlar)
-        let yStack = length;
+        let yStack = length; // Üst üste
         while (yStack < container.height) {
            addPoint(x, yStack, z, 'lattice');
            yStack += length;
         }
       }
+    }
+
+    // YÖN 2: Satırlar X ekseni boyunca (YENİ MANTIK - Rotated Lattice)
+    // X ekseninde ilerler, Z ekseninde zikzak yapar.
+    const xRows = Math.floor((container.length - diameter) / hexStep) + 2;
+    const zCols = Math.floor((container.width / diameter) + 2); // Bu sefer sütunlar Z'de
+
+    for (let row = 0; row < xRows; row++) {
+        const x = row * hexStep; // X ekseninde sıkışık ilerle
+        const zOffset = (row % 2 === 1) ? radius : 0;
+
+        for (let col = 0; col < zCols; col++) {
+            const z = (col * diameter) + zOffset; // Z ekseninde geniş diz
+            
+            addPoint(x, 0, z, 'lattice'); // Zemin
+
+            let yStack = length;
+            while (yStack < container.height) {
+                addPoint(x, yStack, z, 'lattice');
+                yStack += length;
+            }
+        }
     }
   }
 
