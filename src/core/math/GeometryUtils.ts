@@ -5,10 +5,7 @@ export class GeometryUtils {
 
   /**
    * Checks generic intersection.
-   * STRICT ORDER: 
-   * 1. Roll-Roll (Cylinder Math) - Bypasses AABB
-   * 2. AABB Check (Standard optimization)
-   * 3. Box checks
+   * CRITICAL UPDATE: Roll-Roll logic is now prioritized to bypass AABB traps.
    */
   static checkIntersection(
     pos1: IVector3,
@@ -22,22 +19,23 @@ export class GeometryUtils {
   ): boolean {
     
     // 1. PRIORITY: ROLL vs ROLL
-    // Ignore Bounding Boxes. Use pure cylinder distance math.
+    // We check this FIRST to avoid any "Bounding Box" logic interfering with Hexagonal packing.
+    // In Hex packing, Bounding Boxes MUST overlap, so standard AABB checks are misleading/dangerous here.
     if (item1Type === 'roll' && item2Type === 'roll') {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
 
-    // 2. Standard AABB Check (Optimization)
+    // 2. Standard AABB Check (First line of defense for others)
     if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
       return false;
     }
 
-    // 3. BOX vs BOX
+    // 3. SAFEGUARD: If both are boxes, rely strictly on AABB.
     if (item1Type === 'box' && item2Type === 'box') {
       return true; 
     }
 
-    // 4. MIXED CHECKS
+    // 4. MIXED CHECKS (Roll vs Box)
     if (item1Type === 'roll' && item2Type !== 'roll') {
       return this.checkBoxCylinderIntersection(pos2, dim2, pos1, dim1, orientation1);
     }
@@ -82,7 +80,7 @@ export class GeometryUtils {
     );
   }
 
-  // --- PRIVATE MATH ---
+  // --- PRIVATE CYLINDER MATH ---
 
   private static checkCylinderCylinderIntersection(
     pos1: IVector3,
@@ -92,7 +90,7 @@ export class GeometryUtils {
     dim2: IDimensions,
     orient2: RollOrientation
   ): boolean {
-    // TOLERANCE: 5mm overlap allowed for tight packing
+    // AGGRESSIVE TOLERANCE: Allow up to 0.5cm overlap.
     const ALLOWED_OVERLAP = 0.005; 
 
     if (orient1 === orient2) {
@@ -125,11 +123,11 @@ export class GeometryUtils {
            const r2 = dim2.height / 2;
            
            let distSq = 0;
-           if (isX1) { // Y-Z Plane
+           if (isX1) { // Y-Z
              const c1y = pos1.y + r1; const c1z = pos1.z + r1;
              const c2y = pos2.y + r2; const c2z = pos2.z + r2;
              distSq = (c1y - c2y) ** 2 + (c1z - c2z) ** 2;
-           } else { // X-Y Plane
+           } else { // X-Y
              const c1x = pos1.x + r1; const c1y = pos1.y + r1;
              const c2x = pos2.x + r2; const c2y = pos2.y + r2;
              distSq = (c1x - c2x) ** 2 + (c1y - c2y) ** 2;
