@@ -1,67 +1,383 @@
-import type { ICargoItem, IPackingContext, IVector3, IDimensions } from '../types';
+import type { ICargoItem, IPackingContext, IVector3, IDimensions, IPlacedItem, RollOrientation } from '../types';
 import type { IPackingStrategy } from './IPackingStrategy';
 import { GeometryUtils } from '../math/GeometryUtils';
 
+interface CandidatePoint {
+  position: IVector3;
+  score: number;
+  type: 'corner' | 'groove' | 'lattice';
+}
+
+interface OrientationOption {
+  dimensions: IDimensions;
+  rotation: number;
+  orientation: RollOrientation;
+}
+
 export class RollStrategy implements IPackingStrategy {
+  
   findBestPosition(
     item: ICargoItem,
     context: IPackingContext
   ): { position: IVector3; rotation: number; orientation: string; dimensions: IDimensions } | null {
-    const { container } = context;
-
-    let dims: IDimensions;
+    const { container, placedItems } = context;
+    
+    // 1. Determine Dimensions
+    let rollDiameter = 0;
+    let rollLength = 0;
 
     if (item.rollDimensions) {
-        const d = item.rollDimensions.diameter;
-        dims = { length: d, width: d, height: item.rollDimensions.length };
+      rollDiameter = item.rollDimensions.diameter;
+      rollLength = item.rollDimensions.length;
     } else if (item.dimensions) {
-        dims = item.dimensions;
+      rollDiameter = Math.min(item.dimensions.length, item.dimensions.width);
+      rollLength = item.dimensions.height;
     } else {
-        return null;
+      return null;
     }
 
     if (item.palletDimensions) {
-        dims = {
-            length: item.palletDimensions.length,
-            width: item.palletDimensions.width,
-            height: dims.height + item.palletDimensions.height
-        };
+      const totalHeight = rollLength + item.palletDimensions.height;
+      rollDiameter = Math.max(item.palletDimensions.length, item.palletDimensions.width); 
+      rollLength = totalHeight; 
     }
 
-    const step = 0.5;
-    const maxX = container.dimensions.length - dims.length;
-    const maxZ = container.dimensions.width - dims.width;
+    const orientations = this.getOrientations(rollDiameter, rollLength, item.isPalletized);
 
-    if (maxX < 0 || maxZ < 0) return null;
+    // 2. Generate Points (Using Multi-Pattern Lattice)
+    const candidatePoints = this.generateCandidatePoints(placedItems, container.dimensions, rollDiameter, rollLength);
 
-    for (let x = 0; x <= maxX; x += step) {
-      for (let z = 0; z <= maxZ; z += step) {
-          const pos = { x, y: 0, z };
-
-          if (this.canPlaceAt(item, pos, dims, context)) {
-              return {
-                  position: pos,
-                  rotation: 0,
-                  orientation: 'vertical',
-                  dimensions: dims
-              };
-          }
+    // 3. Find Best Fit
+    for (const point of candidatePoints) {
+      for (const orient of orientations) {
+        
+        // Use Lattice points AS IS. Do not Nudge.
+        // Nudging breaks the carefully calculated hex symmetry.
+        if (point.type === 'lattice') {
+             if (this.canPlaceAt(null, point.position, orient, context)) {
+                 return {
+                   position: point.position,
+                   rotation: orient.rotation,
+                   orientation: orient.orientation,
+                   dimensions: orient.dimensions
+                 };
+             }
+        } else {
+             // For standard corners, try simple gravity nudge
+             const finalPos = this.tryNudgePosition(point.position, orient, context);
+             if (finalPos) {
+                return {
+                  position: finalPos,
+                  rotation: orient.rotation,
+                  orientation: orient.orientation,
+                  dimensions: orient.dimensions
+                };
+             }
+        }
       }
     }
 
     return null;
   }
 
-  canPlaceAt(item: ICargoItem, pos: IVector3, dims: IDimensions, context: IPackingContext): boolean {
-      if (!GeometryUtils.isWithinBounds(pos, dims, context.container.dimensions)) return false;
+  private tryNudgePosition(
+    startPos: IVector3,
+    orient: OrientationOption,
+    context: IPackingContext
+  ): IVector3 | null {
+    if (this.canPlaceAt(null, startPos, orient, context)) {
+      return this.optimizeCoordinate(startPos, orient, context);
+    }
+    return null;
+  }
 
-      if (item.isPalletized && pos.y > 0.01) {
+  private optimizeCoordinate(pos: IVector3, orient: OrientationOption, context: IPackingContext): IVector3 {
+    let bestPos = { ...pos };
+    const step = 0.05; 
+    
+    // Back (Z)
+    while (bestPos.z - step >= 0) {
+      const testPos = { ...bestPos, z: bestPos.z - step };
+      if (this.canPlaceAt(null, testPos, orient, context)) {
+        bestPos = testPos;
+      } else {
+        break; 
+      }
+    }
+    // Left (X)
+    while (bestPos.x - step >= 0) {
+      const testPos = { ...bestPos, x: bestPos.x - step };
+      if (this.canPlaceAt(null, testPos, orient, context)) {
+        bestPos = testPos;
+      } else {
+        break;
+      }
+    }
+    return bestPos;
+  }
+
+  private getOrientations(diameter: number, length: number, isPalletized?: boolean): OrientationOption[] {
+    const options: OrientationOption[] = [];
+
+    // Vertical
+    options.push({
+      dimensions: { length: diameter, width: diameter, height: length },
+      rotation: 0,
+      orientation: 'vertical'
+    });
+
+    if (!isPalletized) {
+      // Horizontal X
+      options.push({
+        dimensions: { length: length, width: diameter, height: diameter },
+        rotation: 0,
+        orientation: 'horizontal'
+      });
+      // Horizontal Z
+      options.push({
+        dimensions: { length: diameter, width: length, height: diameter },
+        rotation: 90,
+        orientation: 'horizontal'
+      });
+    }
+    return options;
+  }
+
+  private generateCandidatePoints(
+    placedItems: IPlacedItem[], 
+    containerDims: IDimensions,
+    currentDiameter: number,
+    currentLength: number
+  ): CandidatePoint[] {
+    const points: CandidatePoint[] = [];
+    const pointSet = new Set<string>();
+
+    const addPoint = (x: number, y: number, z: number, type: 'corner' | 'groove' | 'lattice') => {
+      // Safety bounds
+      if (x < -0.01 || y < -0.01 || z < -0.01) return;
+      if (x > containerDims.length || y > containerDims.height || z > containerDims.width) return;
+
+      const key = `${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`;
+      if (!pointSet.has(key)) {
+        pointSet.add(key);
+        
+        let score = (y * 10000) + (z * 100) + x;
+        // Super High Priority for Lattice
+        if (type === 'lattice') score -= 100000; 
+        
+        points.push({ position: { x, y, z }, score, type });
+      }
+    };
+
+    // 1. MULTI-PATTERN LATTICE GENERATION
+    // We generate multiple shifts of the honeycomb grid to find the one that fits best.
+    this.generateMultiPatternLattice(containerDims, currentDiameter, currentLength, addPoint);
+
+    // 2. Standard Grid Corners (Fallback)
+    addPoint(0, 0, 0, 'corner');
+    for (const item of placedItems) {
+      const pos = item.position;
+      const dim = item.dimensions;
+      addPoint(pos.x + dim.length, pos.y, pos.z, 'corner'); 
+      addPoint(pos.x, pos.y, pos.z + dim.width, 'corner'); 
+      addPoint(pos.x, pos.y + dim.height, pos.z, 'corner'); 
+      addPoint(pos.x + dim.length, pos.y, pos.z + dim.width, 'corner'); 
+    }
+
+    return points.sort((a, b) => a.score - b.score);
+  }
+
+  /**
+   * Generates multiple variations of the Hex Lattice.
+   * Pattern A: Row 0 starts at 0.
+   * Pattern B: Row 0 starts at Radius (Shifted).
+   */
+  private generateMultiPatternLattice(
+    container: IDimensions, 
+    diameter: number, 
+    length: number,
+    addPoint: (x: number, y: number, z: number, type: 'lattice') => void
+  ) {
+    const radius = diameter / 2;
+    const hexStep = diameter * 0.8660254; // sqrt(3)/2 * D
+    
+    // --- VERTICAL ROLLS (Floor Packing X-Z) ---
+    // Try 2 patterns for Z-axis rows
+    
+    for (let pattern = 0; pattern < 2; pattern++) {
+        // Pattern 0: Even rows start at 0, Odd rows indented
+        // Pattern 1: Even rows start indented, Odd rows at 0 (Forces shift near wall)
+        
+        const zRows = Math.floor((container.width - diameter) / hexStep) + 3; 
+        const xCols = Math.floor(container.length / diameter) + 2;
+
+        for (let row = 0; row < zRows; row++) {
+          const z = row * hexStep;
+          
+          // Logic for Zigzag shift
+          const isShiftedRow = (row % 2 === 1);
+          let xOffset = isShiftedRow ? radius : 0;
+          
+          // Apply Pattern Shift
+          if (pattern === 1) {
+              xOffset = (xOffset === 0) ? radius : 0;
+          }
+
+          for (let col = 0; col < xCols; col++) {
+            const x = (col * diameter) + xOffset;
+            
+            // Add point at floor
+            addPoint(x, 0, z, 'lattice');
+            
+            // Add vertical stack points
+            let yStack = length;
+            while (yStack < container.height) {
+               addPoint(x, yStack, z, 'lattice');
+               yStack += length;
+            }
+          }
+        }
+    }
+
+    // --- HORIZONTAL ROLLS (Wall Packing) ---
+    // Similar logic for Horizontal if needed, usually less critical for "14 vs 12" count on floor
+    // but added for completeness.
+    const yLayers = Math.floor((container.height - diameter) / hexStep) + 2;
+    const zCols = Math.floor(container.width / diameter) + 2;
+    
+    for (let layer = 0; layer < yLayers; layer++) {
+        const y = layer * hexStep;
+        const zOffset = (layer % 2 === 1) ? radius : 0;
+        
+        for (let col = 0; col < zCols; col++) {
+            const z = (col * diameter) + zOffset;
+            // X-Aligned
+            addPoint(0, y, z, 'lattice');
+            // Z-Aligned (Swap axis logic)
+            const xOffset = (layer % 2 === 1) ? radius : 0;
+            const x = (col * diameter) + xOffset;
+            addPoint(x, y, 0, 'lattice');
+        }
+    }
+  }
+
+  canPlaceAt(
+    item: ICargoItem | null,
+    pos: IVector3, 
+    orient: OrientationOption,
+    context: IPackingContext
+  ): boolean {
+    const { container, placedItems } = context;
+    const dimensions = orient.dimensions;
+    const orientationType = orient.orientation;
+
+    if (!GeometryUtils.isWithinBounds(pos, dimensions, container.dimensions)) return false;
+
+    for (const other of placedItems) {
+      if (GeometryUtils.checkIntersection(
+          pos, dimensions, 
+          other.position, other.dimensions,
+          'roll', other.item.type,
+          orientationType, other.orientation || 'vertical' 
+      )) {
         return false;
       }
+    }
 
-      for (const other of context.placedItems) {
-          if (GeometryUtils.checkIntersection(pos, dims, other.position, other.dimensions)) return false;
+    if (pos.y > 0.01) {
+      if (!this.hasSufficientSupport(pos, dimensions, orientationType, placedItems)) return false;
+      
+      if (orientationType === 'vertical') {
+        const supportingItems = this.getSupportingItems(pos, dimensions, placedItems);
+        for (const support of supportingItems) {
+          if (support.item.type === 'roll' && support.orientation === 'horizontal') {
+             return false;
+          }
+        }
       }
-      return true;
+    }
+
+    return true;
+  }
+
+  private getSupportingItems(pos: IVector3, dims: IDimensions, placedItems: IPlacedItem[]): IPlacedItem[] {
+    const supports: IPlacedItem[] = [];
+    const epsilon = 0.05;
+    const bottomY = pos.y;
+
+    for (const item of placedItems) {
+      const itemTop = item.position.y + item.dimensions.height;
+      if (Math.abs(itemTop - bottomY) < epsilon) {
+          if (GeometryUtils.checkAABBIntersection(
+              { x: pos.x - epsilon, y: 0, z: pos.z - epsilon }, 
+              { length: dims.length + epsilon*2, width: dims.width + epsilon*2, height: 1 },
+              { x: item.position.x, y: 0, z: item.position.z }, 
+              { ...item.dimensions, height: 1 }
+          )) {
+              supports.push(item);
+          }
+      }
+    }
+    return supports;
+  }
+
+  private hasSufficientSupport(
+    pos: IVector3, 
+    dims: IDimensions, 
+    orientation: RollOrientation, 
+    placedItems: IPlacedItem[]
+  ): boolean {
+    const supportingItems = this.getSupportingItems(pos, dims, placedItems);
+    if (supportingItems.length === 0) return false;
+
+    const isSittingOnBox = supportingItems.some(i => i.item.type !== 'roll');
+    if (isSittingOnBox) {
+        let supportedArea = 0;
+        const itemArea = dims.length * dims.width;
+        for (const support of supportingItems) {
+            const overlapX = Math.max(0, Math.min(pos.x + dims.length, support.position.x + support.dimensions.length) - Math.max(pos.x, support.position.x));
+            const overlapZ = Math.max(0, Math.min(pos.z + dims.width, support.position.z + support.dimensions.width) - Math.max(pos.z, support.position.z));
+            supportedArea += overlapX * overlapZ;
+        }
+        return (supportedArea / itemArea) > 0.5;
+    }
+
+    // Roll Support
+    let contactCount = 0;
+    const myRadius = (orientation === 'vertical' ? dims.length : dims.height) / 2;
+    
+    let myCenter: {a: number, b: number}; 
+    if (orientation === 'vertical') myCenter = { a: pos.x + myRadius, b: pos.z + myRadius }; 
+    else if (dims.length > dims.width) myCenter = { a: pos.y + myRadius, b: pos.z + myRadius }; 
+    else myCenter = { a: pos.x + myRadius, b: pos.y + myRadius };
+
+    for (const support of supportingItems) {
+        if (support.item.type === 'roll') {
+            const supportRadius = (support.orientation === 'vertical' ? support.dimensions.length : support.dimensions.height) / 2;
+            let supportCenter: {a: number, b: number};
+
+            if (orientation === 'vertical' && support.orientation === 'vertical') {
+                 supportCenter = { a: support.position.x + supportRadius, b: support.position.z + supportRadius };
+            } else if (orientation === 'horizontal' && support.orientation === 'horizontal') {
+                 const myAlign = dims.length > dims.width ? 'x' : 'z';
+                 const supAlign = support.dimensions.length > support.dimensions.width ? 'x' : 'z';
+                 if (myAlign !== supAlign) continue;
+
+                 if (myAlign === 'x') supportCenter = { a: support.position.y + supportRadius, b: support.position.z + supportRadius };
+                 else supportCenter = { a: support.position.x + supportRadius, b: support.position.y + supportRadius };
+            } else {
+                continue; 
+            }
+
+            const dist = Math.sqrt((myCenter.a - supportCenter.a)**2 + (myCenter.b - supportCenter.b)**2);
+            const optimalDist = myRadius + supportRadius;
+            
+            if (Math.abs(dist - optimalDist) < 0.25) {
+                contactCount++;
+            }
+        }
+    }
+
+    return contactCount >= 1;
   }
 }
