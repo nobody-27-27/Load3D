@@ -4,9 +4,11 @@ export class GeometryUtils {
   private static readonly EPSILON = 0.001;
 
   /**
-   * Checks generic intersection between items.
-   * CRITICAL FIX: Roll-Roll checks are prioritized to bypass AABB (Bounding Box) logic.
-   * In hexagonal packing, bounding boxes MUST overlap, so standard AABB checks cause false positives.
+   * Checks generic intersection.
+   * STRICT ORDER: 
+   * 1. Roll-Roll (Cylinder Math) -> Bypasses AABB checks entirely.
+   * 2. AABB Check (Optimization for boxes)
+   * 3. Box checks
    */
   static checkIntersection(
     pos1: IVector3,
@@ -19,24 +21,24 @@ export class GeometryUtils {
     orientation2: RollOrientation = 'vertical'
   ): boolean {
     
-    // 1. ÖNCELİKLİ KONTROL: RULO vs RULO (PRIORITY CHECK)
-    // Kutuların (Bounding Box) iç içe geçmesine aldırış etmeden doğrudan silindir matematiği yap.
+    // 1. KRİTİK ÖNCELİK: RULO vs RULO
+    // Petek dizilimde kutu sınırları (AABB) kesinlikle çakışır. 
+    // Bu yüzden kutu kontrolünü atlayıp doğrudan silindir mesafesine bakmalıyız.
     if (item1Type === 'roll' && item2Type === 'roll') {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
 
-    // 2. Standart AABB Kontrolü (Sadece Rulo OLMAYAN durumlar için güvenlik)
-    // Eğer ikisi de rulo değilse, kutu sınırları değmiyorsa çarpışma yoktur.
+    // 2. Standart AABB Kontrolü (Diğerleri için performans)
     if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
       return false;
     }
 
-    // 3. KUTU vs KUTU
+    // 3. Kutu vs Kutu
     if (item1Type === 'box' && item2Type === 'box') {
-      return true; // AABB zaten yukarıda doğrulandı
+      return true; 
     }
 
-    // 4. KARIŞIK TİPLER (Rulo vs Kutu)
+    // 4. Karışık Kontroller
     if (item1Type === 'roll' && item2Type !== 'roll') {
       return this.checkBoxCylinderIntersection(pos2, dim2, pos1, dim1, orientation1);
     }
@@ -81,7 +83,7 @@ export class GeometryUtils {
     );
   }
 
-  // --- SİLİNDİR MATEMATİĞİ (PRIVATE) ---
+  // --- PRIVATE MATH ---
 
   private static checkCylinderCylinderIntersection(
     pos1: IVector3,
@@ -91,15 +93,13 @@ export class GeometryUtils {
     dim2: IDimensions,
     orient2: RollOrientation
   ): boolean {
-    // TOLERANS: 5mm (Petek yapıda sürtünme payı)
+    // TOLERANS: 5mm. Petek yapının sıkışmasına izin ver.
     const ALLOWED_OVERLAP = 0.005; 
 
     if (orient1 === orient2) {
       if (orient1 === 'vertical') {
-        // Yükseklik (Y) kontrolü
         if (!this.checkIntervalOverlap(pos1.y, dim1.height, pos2.y, dim2.height)) return false;
         
-        // Daire Mesafe Kontrolü (X-Z Düzlemi)
         const r1 = dim1.length / 2;
         const r2 = dim2.length / 2;
         const c1x = pos1.x + r1; const c1z = pos1.z + r1;
@@ -108,11 +108,10 @@ export class GeometryUtils {
         const distSq = (c1x - c2x) ** 2 + (c1z - c2z) ** 2;
         const minAllowedDist = r1 + r2 - ALLOWED_OVERLAP;
         
-        // Eğer merkezler arası mesafe, yarıçaplar toplamından küçükse çarpışma vardır.
         return distSq < minAllowedDist * minAllowedDist;
       } 
       else {
-        // Yatay (Horizontal) Kontrol
+        // Horizontal
         const isX1 = dim1.length > dim1.width;
         const isX2 = dim2.length > dim2.width;
 
@@ -123,16 +122,15 @@ export class GeometryUtils {
            
            if (!longAxisOverlap) return false;
 
-           // Kesit Alanı Kontrolü
            const r1 = dim1.height / 2;
            const r2 = dim2.height / 2;
            
            let distSq = 0;
-           if (isX1) { // Kesit Y-Z
+           if (isX1) { // Y-Z Düzlemi
              const c1y = pos1.y + r1; const c1z = pos1.z + r1;
              const c2y = pos2.y + r2; const c2z = pos2.z + r2;
              distSq = (c1y - c2y) ** 2 + (c1z - c2z) ** 2;
-           } else { // Kesit X-Y
+           } else { // X-Y Düzlemi
              const c1x = pos1.x + r1; const c1y = pos1.y + r1;
              const c2x = pos2.x + r2; const c2y = pos2.y + r2;
              distSq = (c1x - c2x) ** 2 + (c1y - c2y) ** 2;
@@ -143,7 +141,6 @@ export class GeometryUtils {
         }
       }
     }
-    // Farklı oryantasyonlar için varsayılan güvenli dönüş
     return true; 
   }
 
