@@ -14,23 +14,23 @@ export class GeometryUtils {
     orientation2: RollOrientation = 'vertical'
   ): boolean {
     
-    // 1. ÖNCELİKLİ: RULO - RULO
-    // AABB (Kutu) kontrolünü atla. Sadece mesafe hesabı yap.
+    // 1. ROLL vs ROLL (Highest Priority)
+    // Bypass AABB checks. Use simple distance math.
     if (item1Type === 'roll' && item2Type === 'roll') {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
 
-    // 2. AABB (Kutu Sınırları) Kontrolü
+    // 2. AABB Check (Optimization for non-roll interactions)
     if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
       return false;
     }
 
-    // 3. Kutu - Kutu
+    // 3. BOX vs BOX
     if (item1Type === 'box' && item2Type === 'box') {
       return true; 
     }
 
-    // 4. Karışık
+    // 4. MIXED
     if (item1Type === 'roll' && item2Type !== 'roll') {
       return this.checkBoxCylinderIntersection(pos2, dim2, pos1, dim1, orientation1);
     }
@@ -75,6 +75,8 @@ export class GeometryUtils {
     );
   }
 
+  // --- PRIVATE MATH ---
+
   private static checkCylinderCylinderIntersection(
     pos1: IVector3,
     dim1: IDimensions,
@@ -83,7 +85,7 @@ export class GeometryUtils {
     dim2: IDimensions,
     orient2: RollOrientation
   ): boolean {
-    // 5mm tolerans
+    // 5mm Tolerance for soft packing
     const ALLOWED_OVERLAP = 0.005; 
 
     if (orient1 === orient2) {
@@ -101,7 +103,7 @@ export class GeometryUtils {
         return distSq < minAllowedDist * minAllowedDist;
       } 
       else {
-        // Horizontal logic
+        // Horizontal
         const isX1 = dim1.length > dim1.width;
         const isX2 = dim2.length > dim2.width;
 
@@ -116,11 +118,11 @@ export class GeometryUtils {
            const r2 = dim2.height / 2;
            
            let distSq = 0;
-           if (isX1) { 
+           if (isX1) { // Y-Z
              const c1y = pos1.y + r1; const c1z = pos1.z + r1;
              const c2y = pos2.y + r2; const c2z = pos2.z + r2;
              distSq = (c1y - c2y) ** 2 + (c1z - c2z) ** 2;
-           } else { 
+           } else { // X-Y
              const c1x = pos1.x + r1; const c1y = pos1.y + r1;
              const c2x = pos2.x + r2; const c2y = pos2.y + r2;
              distSq = (c1x - c2x) ** 2 + (c1y - c2y) ** 2;
@@ -155,7 +157,7 @@ export class GeometryUtils {
        return yOverlap && (distSq < minDist * minDist);
     } 
     else {
-      // Horizontal logic...
+      // Horizontal
       const isXAxis = cylDim.length > cylDim.width;
       if (isXAxis) {
           const cy = cylPos.y + radius; const cz = cylPos.z + radius;
