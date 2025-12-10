@@ -1,3 +1,4 @@
+
 import type { ICargoItem, IPackingContext, IVector3, IDimensions, IPlacedItem, RollOrientation } from '../types';
 import type { IPackingStrategy } from './IPackingStrategy';
 import { GeometryUtils } from '../math/GeometryUtils';
@@ -169,7 +170,7 @@ export class RollStrategy implements IPackingStrategy {
 
     // 1. GENERATE FIXED HEX LATTICE
     // This forces the algorithm to try the "HoneyComb" pattern first.
-    this.generateFixedHexPoints(containerDims, currentDiameter, currentLength, addPoint);
+    this.generateNestedHexPoints(containerDims, currentDiameter, currentLength, addPoint);
 
     // 2. Standard Grid Corners (Fallback)
     addPoint(0, 0, 0, 'corner');
@@ -189,7 +190,7 @@ export class RollStrategy implements IPackingStrategy {
    * Generates strictly calculated Hexagonal Lattice points.
    * This corresponds to a "Triangular Packing" layout on the floor.
    */
-  private generateFixedHexPoints(
+  private generateNestedHexPoints(
     container: IDimensions, 
     diameter: number, 
     length: number,
@@ -202,20 +203,18 @@ export class RollStrategy implements IPackingStrategy {
     // We iterate "Rows" along the Z axis (depth), and "Cols" along X axis (width).
     // Note: Z is the depth of the container, X is the width.
     
-    // Calculate how many rows fit in Z
-    const numRowsZ = Math.floor((container.width - diameter) / rowHeight) + 2;
-    // Calculate how many cols fit in X
-    const numColsX = Math.floor(container.length / diameter) + 2;
+    const numRowsZ = Math.floor((container.width - diameter) / rowHeight) + 1;
+    const numColsX = Math.floor((container.length - diameter) / diameter) + 1;
+    const numColsXShifted = Math.floor((container.length - diameter - radius) / diameter) + 1;
 
     for (let row = 0; row < numRowsZ; row++) {
-      // Z position for this row
       const z = row * rowHeight;
       
-      // Hex Logic: Every ODD row is shifted by Radius (Half Diameter)
       const isShifted = (row % 2 === 1);
       const xOffset = isShifted ? radius : 0;
+      const cols = isShifted ? numColsXShifted : numColsX;
       
-      for (let col = 0; col < numColsX; col++) {
+      for (let col = 0; col < cols; col++) {
         const x = (col * diameter) + xOffset;
         
         // Add floor point
