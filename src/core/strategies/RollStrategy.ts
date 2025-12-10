@@ -43,14 +43,14 @@ export class RollStrategy implements IPackingStrategy {
 
     const orientations = this.getOrientations(rollDiameter, rollLength, item.isPalletized);
 
-    // 2. Generate Only the BEST Lattice Points
+    // 2. Generate Points (All 4 Lattice Variations)
     const candidatePoints = this.generateCandidatePoints(placedItems, container.dimensions, rollDiameter, rollLength);
 
     // 3. Find Best Fit
     for (const point of candidatePoints) {
       for (const orient of orientations) {
         
-        // Petek noktaları kesindir. Kaydırma (Nudge) yapma.
+        // Lattice points are mathematically precise. Use AS IS.
         if (point.type === 'lattice') {
              if (this.canPlaceAt(null, point.position, orient, context)) {
                  return {
@@ -61,6 +61,7 @@ export class RollStrategy implements IPackingStrategy {
                  };
              }
         } else {
+             // Fallback logic
              const finalPos = this.tryNudgePosition(point.position, orient, context);
              if (finalPos) {
                 return {
@@ -142,16 +143,19 @@ export class RollStrategy implements IPackingStrategy {
       const key = `${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`;
       if (!pointSet.has(key)) {
         pointSet.add(key);
+        
         let score = (y * 10000) + (z * 100) + x;
         if (type === 'lattice') score -= 1000000; 
+        
         points.push({ position: { x, y, z }, score, type });
       }
     };
 
-    // 1. SMART LATTICE GENERATION
-    this.generateSmartLattice(containerDims, currentDiameter, currentLength, addPoint);
+    // 1. GENERATE FORCED LATTICE
+    // This generates ALL valid hex points for 4 different pattern strategies.
+    this.generateForcedLattice(containerDims, currentDiameter, currentLength, addPoint);
 
-    // 2. Fallback Grid (Sadece Petek dolarsa)
+    // 2. Fallback Grid (Score is much worse, so these are checked LAST)
     addPoint(0, 0, 0, 'corner');
     for (const item of placedItems) {
       const pos = item.position;
@@ -166,10 +170,10 @@ export class RollStrategy implements IPackingStrategy {
   }
 
   /**
-   * Calculates the best Hexagonal orientation (Along X or Along Z) 
-   * and generates ONLY that lattice to prevent "Greedy Grid" fallback.
+   * Generates 4 variations of Hex Lattices (Direction X/Z + Start Shifted/Normal).
+   * It blindly adds ALL of them. The algorithm will filter valid ones.
    */
-  private generateSmartLattice(
+  private generateForcedLattice(
     container: IDimensions, 
     diameter: number, 
     length: number,
@@ -178,32 +182,30 @@ export class RollStrategy implements IPackingStrategy {
     const radius = diameter / 2;
     const hexStep = diameter * 0.8660254; 
     
-    // Calculate theoretical capacity for Pattern Z (Rows along Z axis)
-    const zRows_Z = Math.floor((container.width - diameter) / hexStep) + 1;
-    const zCols_Z = Math.floor(container.length / diameter);
-    const capacityZ = zRows_Z * zCols_Z; // Approximate
-
-    // Calculate theoretical capacity for Pattern X (Rows along X axis)
-    const xRows_X = Math.floor((container.length - diameter) / hexStep) + 1;
-    const xCols_X = Math.floor(container.width / diameter);
-    const capacityX = xRows_X * xCols_X;
-
-    // DECISION: Which pattern is denser?
-    const usePatternX = capacityX > capacityZ;
-
-    if (!usePatternX) {
-        // PATTERN Z: Standard (Rows along Z, Zigzag in X)
-        const zRows = Math.floor((container.width - diameter) / hexStep) + 2; 
-        const xCols = Math.floor(container.length / diameter) + 1;
+    // PATTERN SET 1: Rows along Z-Axis (Vertical packing flow along width)
+    // We try Normal Start (0) and Shifted Start (Radius)
+    for (let shiftStrategy = 0; shiftStrategy < 2; shiftStrategy++) {
+        
+        const zRows = Math.floor((container.width - diameter) / hexStep) + 3; 
+        const xCols = Math.floor(container.length / diameter) + 2;
 
         for (let row = 0; row < zRows; row++) {
           const z = row * hexStep;
-          const xOffset = (row % 2 === 1) ? radius : 0;
           
+          // Determine if this row is indented
+          const isIndentedRow = (row % 2 === 1);
+          let xOffset = isIndentedRow ? radius : 0;
+          
+          // If shiftStrategy is 1, we INVERT the indentation logic (Start indented)
+          if (shiftStrategy === 1) {
+              xOffset = (xOffset === 0) ? radius : 0;
+          }
+
           for (let col = 0; col < xCols; col++) {
             const x = (col * diameter) + xOffset;
-            addPoint(x, 0, z, 'lattice');
+            addPoint(x, 0, z, 'lattice'); // Floor
             
+            // Stacking
             let yStack = length;
             while (yStack < container.height) {
                addPoint(x, yStack, z, 'lattice');
@@ -211,18 +213,27 @@ export class RollStrategy implements IPackingStrategy {
             }
           }
         }
-    } else {
-        // PATTERN X: Rotated (Rows along X, Zigzag in Z)
-        const xRows = Math.floor((container.length - diameter) / hexStep) + 2;
-        const zCols = Math.floor(container.width / diameter) + 1;
+    }
+
+    // PATTERN SET 2: Rows along X-Axis (Vertical packing flow along length)
+    // Rotated Lattice logic
+    for (let shiftStrategy = 0; shiftStrategy < 2; shiftStrategy++) {
+        const xRows = Math.floor((container.length - diameter) / hexStep) + 3;
+        const zCols = Math.floor((container.width / diameter) + 2);
 
         for (let row = 0; row < xRows; row++) {
             const x = row * hexStep;
-            const zOffset = (row % 2 === 1) ? radius : 0;
+            
+            const isIndentedRow = (row % 2 === 1);
+            let zOffset = isIndentedRow ? radius : 0;
+            
+            if (shiftStrategy === 1) {
+                zOffset = (zOffset === 0) ? radius : 0;
+            }
 
             for (let col = 0; col < zCols; col++) {
                 const z = (col * diameter) + zOffset;
-                addPoint(x, 0, z, 'lattice');
+                addPoint(x, 0, z, 'lattice'); // Floor
 
                 let yStack = length;
                 while (yStack < container.height) {
