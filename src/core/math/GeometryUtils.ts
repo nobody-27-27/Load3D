@@ -14,23 +14,23 @@ export class GeometryUtils {
     orientation2: RollOrientation = 'vertical'
   ): boolean {
     
-    // 1. ROLL vs ROLL (Highest Priority)
-    // Bypass AABB checks. Use simple distance math.
+    // 1. ÖNCELİKLİ: RULO - RULO
+    // AABB (Kutu) kontrolünü atla. Sadece mesafe hesabı yap.
     if (item1Type === 'roll' && item2Type === 'roll') {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
 
-    // 2. AABB Check (Optimization for non-roll interactions)
+    // 2. AABB (Kutu Sınırları) Kontrolü
     if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
       return false;
     }
 
-    // 3. BOX vs BOX
+    // 3. Kutu - Kutu
     if (item1Type === 'box' && item2Type === 'box') {
       return true; 
     }
 
-    // 4. MIXED
+    // 4. Karışık
     if (item1Type === 'roll' && item2Type !== 'roll') {
       return this.checkBoxCylinderIntersection(pos2, dim2, pos1, dim1, orientation1);
     }
