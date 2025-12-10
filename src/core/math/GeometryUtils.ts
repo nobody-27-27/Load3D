@@ -4,8 +4,9 @@ export class GeometryUtils {
   private static readonly EPSILON = 0.001;
 
   /**
-   * Checks generic intersection.
-   * CRITICAL UPDATE: Roll-Roll logic is now prioritized to bypass AABB traps.
+   * Checks generic intersection between a candidate item and an existing placed item.
+   * CRITICAL FIX: Roll-Roll checks are prioritized to bypass AABB (Bounding Box) logic.
+   * In hexagonal packing, bounding boxes MUST overlap, so standard AABB checks cause false positives.
    */
   static checkIntersection(
     pos1: IVector3,
@@ -18,21 +19,21 @@ export class GeometryUtils {
     orientation2: RollOrientation = 'vertical'
   ): boolean {
     
-    // 1. PRIORITY: ROLL vs ROLL
-    // We check this FIRST to avoid any "Bounding Box" logic interfering with Hexagonal packing.
-    // In Hex packing, Bounding Boxes MUST overlap, so standard AABB checks are misleading/dangerous here.
+    // 1. PRIORITY CHECK: ROLL vs ROLL
+    // We strictly use Cylinder Math here. We ignore Bounding Boxes entirely.
     if (item1Type === 'roll' && item2Type === 'roll') {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
 
-    // 2. Standard AABB Check (First line of defense for others)
+    // 2. Standard AABB Check (Optimization for Boxes/Mixed)
+    // Only applied if it's NOT a Roll-Roll comparison
     if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
       return false;
     }
 
-    // 3. SAFEGUARD: If both are boxes, rely strictly on AABB.
+    // 3. BOX vs BOX
     if (item1Type === 'box' && item2Type === 'box') {
-      return true; 
+      return true; // Validated by AABB above
     }
 
     // 4. MIXED CHECKS (Roll vs Box)
@@ -90,13 +91,15 @@ export class GeometryUtils {
     dim2: IDimensions,
     orient2: RollOrientation
   ): boolean {
-    // AGGRESSIVE TOLERANCE: Allow up to 0.5cm overlap.
+    // TOLERANCE: Allow 5mm overlap to account for floating point errors in packed lattice.
     const ALLOWED_OVERLAP = 0.005; 
 
     if (orient1 === orient2) {
       if (orient1 === 'vertical') {
+        // Vertical: Height check
         if (!this.checkIntervalOverlap(pos1.y, dim1.height, pos2.y, dim2.height)) return false;
         
+        // Circular Distance Check (X-Z Plane)
         const r1 = dim1.length / 2;
         const r2 = dim2.length / 2;
         const c1x = pos1.x + r1; const c1z = pos1.z + r1;
@@ -108,7 +111,7 @@ export class GeometryUtils {
         return distSq < minAllowedDist * minAllowedDist;
       } 
       else {
-        // Horizontal
+        // Horizontal: Orientation check
         const isX1 = dim1.length > dim1.width;
         const isX2 = dim2.length > dim2.width;
 
@@ -119,15 +122,16 @@ export class GeometryUtils {
            
            if (!longAxisOverlap) return false;
 
+           // Cross-section Check
            const r1 = dim1.height / 2;
            const r2 = dim2.height / 2;
            
            let distSq = 0;
-           if (isX1) { // Y-Z
+           if (isX1) { // Section Y-Z
              const c1y = pos1.y + r1; const c1z = pos1.z + r1;
              const c2y = pos2.y + r2; const c2z = pos2.z + r2;
              distSq = (c1y - c2y) ** 2 + (c1z - c2z) ** 2;
-           } else { // X-Y
+           } else { // Section X-Y
              const c1x = pos1.x + r1; const c1y = pos1.y + r1;
              const c2x = pos2.x + r2; const c2y = pos2.y + r2;
              distSq = (c1x - c2x) ** 2 + (c1y - c2y) ** 2;
@@ -138,6 +142,7 @@ export class GeometryUtils {
         }
       }
     }
+    // Default safe fallback for mixed orientations
     return true; 
   }
 
