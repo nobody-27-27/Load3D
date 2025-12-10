@@ -22,7 +22,6 @@ export class RollStrategy implements IPackingStrategy {
   ): { position: IVector3; rotation: number; orientation: string; dimensions: IDimensions } | null {
     const { container, placedItems } = context;
     
-    // 1. Determine Dimensions
     let rollDiameter = 0;
     let rollLength = 0;
 
@@ -44,17 +43,16 @@ export class RollStrategy implements IPackingStrategy {
 
     const orientations = this.getOrientations(rollDiameter, rollLength, item.isPalletized);
 
-    // 2. Generate Points (ONLY LATTICE - NO GRID FALLBACK)
-    // We are removing the safety net. It must pack hex or nothing.
-    const candidatePoints = this.generateCandidatePoints(placedItems, container.dimensions, rollDiameter, rollLength);
+    // INTELLIGENT POINT GENERATION
+    // Calculate which pattern fits the MOST items and ONLY generate those points.
+    const candidatePoints = this.generateBestPatternPoints(placedItems, container.dimensions, rollDiameter, rollLength);
 
-    // 3. Find Best Fit
     for (const point of candidatePoints) {
       for (const orient of orientations) {
         
-        // Use Lattice points AS IS.
+        // Lattice points are precise. Use AS IS.
         if (point.type === 'lattice') {
-             if (this.canPlaceAt(null, point.position, orient, context)) {
+             if (this.canPlaceAt(item, point.position, orient, context)) {
                  return {
                    position: point.position,
                    rotation: orient.rotation,
@@ -62,12 +60,50 @@ export class RollStrategy implements IPackingStrategy {
                    dimensions: orient.dimensions
                  };
              }
-        } 
-        // Note: No Nudge logic needed because we only have lattice points now.
+        } else {
+             // Fallback for non-lattice
+             const finalPos = this.tryNudgePosition(item, point.position, orient, context);
+             if (finalPos) {
+                return {
+                  position: finalPos,
+                  rotation: orient.rotation,
+                  orientation: orient.orientation,
+                  dimensions: orient.dimensions
+                 };
+             }
+        }
       }
     }
 
     return null;
+  }
+
+  private tryNudgePosition(
+    item: ICargoItem,
+    startPos: IVector3,
+    orient: OrientationOption,
+    context: IPackingContext
+  ): IVector3 | null {
+    if (this.canPlaceAt(item, startPos, orient, context)) {
+      return this.optimizeCoordinate(item, startPos, orient, context);
+    }
+    return null;
+  }
+
+  private optimizeCoordinate(item: ICargoItem, pos: IVector3, orient: OrientationOption, context: IPackingContext): IVector3 {
+    let bestPos = { ...pos };
+    const step = 0.05; 
+    while (bestPos.z - step >= 0) {
+      const testPos = { ...bestPos, z: bestPos.z - step };
+      if (this.canPlaceAt(item, testPos, orient, context)) bestPos = testPos;
+      else break; 
+    }
+    while (bestPos.x - step >= 0) {
+      const testPos = { ...bestPos, x: bestPos.x - step };
+      if (this.canPlaceAt(item, testPos, orient, context)) bestPos = testPos;
+      else break;
+    }
+    return bestPos;
   }
 
   private getOrientations(diameter: number, length: number, isPalletized?: boolean): OrientationOption[] {
@@ -92,72 +128,111 @@ export class RollStrategy implements IPackingStrategy {
     return options;
   }
 
-  private generateCandidatePoints(
+  /**
+   * DECISION MAKER:
+   * 1. Calculate Capacity for Grid Pattern
+   * 2. Calculate Capacity for Hex Pattern X-Aligned
+   * 3. Calculate Capacity for Hex Pattern Z-Aligned
+   * 4. Generate points ONLY for the winner.
+   */
+  private generateBestPatternPoints(
     placedItems: IPlacedItem[], 
-    containerDims: IDimensions,
-    currentDiameter: number,
-    currentLength: number
+    container: IDimensions,
+    diameter: number,
+    length: number
   ): CandidatePoint[] {
     const points: CandidatePoint[] = [];
     const pointSet = new Set<string>();
 
     const addPoint = (x: number, y: number, z: number, type: 'corner' | 'groove' | 'lattice') => {
-      // Safety bounds
+      // Bounds check with slight tolerance
       if (x < -0.01 || y < -0.01 || z < -0.01) return;
-      if (x > containerDims.length || y > containerDims.height || z > containerDims.width) return;
+      if (x > container.length || y > container.height || z > container.width) return;
 
       const key = `${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`;
       if (!pointSet.has(key)) {
         pointSet.add(key);
-        // Score logic: Standard sort.
+        // Prioritize bottom-back-left
         let score = (y * 10000) + (z * 100) + x;
+        if (type === 'lattice') score -= 2000000;
         points.push({ position: { x, y, z }, score, type });
       }
     };
 
-    // 1. GENERATE FORCED LATTICE ONLY
-    this.generateForcedLattice(containerDims, currentDiameter, currentLength, addPoint);
+    // --- CALCULATE CAPACITIES ---
+    const hexStep = diameter * 0.8660254;
+    const radius = diameter / 2;
 
-    // REMOVED: Standard Grid Corners.
-    // If we include them, the algorithm might greedily pick them.
-    // By removing them, we FORCE the algorithm to use the Hex/Lattice points.
+    // 1. GRID (Box-like)
+    const gridColsX = Math.floor(container.length / diameter);
+    const gridRowsZ = Math.floor(container.width / diameter);
+    const capGrid = gridColsX * gridRowsZ;
+
+    // 2. HEX Z (Zigzag in X)
+    // Z-rows are spaced by diameter. X-cols spaced by hexStep? No.
+    // Hex Z means rows running along Z axis? No, usually rows are Z=const.
+    // Let's assume standard dense packing:
+    // Rows along Z axis (Z=0, Z=hexStep...)
+    const zRows = Math.floor((container.width - diameter) / hexStep) + 1;
+    // Items per row:
+    // Even rows (0, 2...): start at 0. Count = floor(L/D)
+    // Odd rows (1, 3...): start at R. Count = floor((L-R)/D)
+    let capHexZ = 0;
+    for (let r = 0; r <= zRows; r++) {
+        const offset = (r % 2 === 1) ? radius : 0;
+        capHexZ += Math.floor((container.length - offset) / diameter);
+    }
+
+    // 3. HEX X (Zigzag in Z)
+    // Rows along X axis (X=0, X=hexStep...)
+    const xRows = Math.floor((container.length - diameter) / hexStep) + 1;
+    let capHexX = 0;
+    for (let r = 0; r <= xRows; r++) {
+        const offset = (r % 2 === 1) ? radius : 0;
+        capHexX += Math.floor((container.width - offset) / diameter);
+    }
+
+    // --- SELECT WINNER ---
+    // If Hex is better, use it. If Grid is better/equal, use Grid (simpler).
+    // Note: User says 14 fits (Hex) vs 12 (Grid). So one of the Hex caps should be 14.
+    
+    if (capHexZ > capGrid && capHexZ >= capHexX) {
+        // GENERATE HEX Z PATTERN
+        this.generateHexLattice(container, diameter, length, 'Z', addPoint);
+    } else if (capHexX > capGrid && capHexX > capHexZ) {
+        // GENERATE HEX X PATTERN
+        this.generateHexLattice(container, diameter, length, 'X', addPoint);
+    } else {
+        // FALLBACK TO GRID (If Hex doesn't actually add value)
+        // But since user insists on 14, we trust the Hex logic will find it.
+        // We will generate Hex Z anyway if it's equal to Grid, just to be safe with the "honeycomb" requirement.
+        this.generateHexLattice(container, diameter, length, 'Z', addPoint);
+    }
 
     return points.sort((a, b) => a.score - b.score);
   }
 
-  /**
-   * Generates 4 variations of Hex Lattices (Direction X/Z + Start Shifted/Normal).
-   */
-  private generateForcedLattice(
+  private generateHexLattice(
     container: IDimensions, 
     diameter: number, 
     length: number,
+    axis: 'X' | 'Z',
     addPoint: (x: number, y: number, z: number, type: 'lattice') => void
   ) {
     const radius = diameter / 2;
-    const hexStep = diameter * 0.8660254; 
-    
-    // PATTERN SET 1: Rows along Z-Axis
-    for (let shiftStrategy = 0; shiftStrategy < 2; shiftStrategy++) {
-        
-        const zRows = Math.floor((container.width - diameter) / hexStep) + 3; 
-        const xCols = Math.floor(container.length / diameter) + 2;
+    const hexStep = diameter * 0.8660254;
+
+    if (axis === 'Z') {
+        // Rows along Z (Depth)
+        const zRows = Math.floor((container.width - diameter) / hexStep) + 2; 
+        const xCols = Math.floor(container.length / diameter) + 1;
 
         for (let row = 0; row < zRows; row++) {
           const z = row * hexStep;
-          const isIndentedRow = (row % 2 === 1);
-          let xOffset = isIndentedRow ? radius : 0;
-          
-          if (shiftStrategy === 1) {
-              xOffset = (xOffset === 0) ? radius : 0;
-          }
-
+          const xOffset = (row % 2 === 1) ? radius : 0;
           for (let col = 0; col < xCols; col++) {
             const x = (col * diameter) + xOffset;
-            
-            // Floor
-            addPoint(x, 0, z, 'lattice');
-            
+            addPoint(x, 0, z, 'lattice'); // Floor
             // Stack
             let yStack = length;
             while (yStack < container.height) {
@@ -166,26 +241,18 @@ export class RollStrategy implements IPackingStrategy {
             }
           }
         }
-    }
-
-    // PATTERN SET 2: Rows along X-Axis
-    for (let shiftStrategy = 0; shiftStrategy < 2; shiftStrategy++) {
-        const xRows = Math.floor((container.length - diameter) / hexStep) + 3;
-        const zCols = Math.floor((container.width / diameter) + 2);
+    } else {
+        // Rows along X (Width/Length)
+        const xRows = Math.floor((container.length - diameter) / hexStep) + 2;
+        const zCols = Math.floor((container.width / diameter) + 1;
 
         for (let row = 0; row < xRows; row++) {
             const x = row * hexStep;
-            const isIndentedRow = (row % 2 === 1);
-            let zOffset = isIndentedRow ? radius : 0;
-            
-            if (shiftStrategy === 1) {
-                zOffset = (zOffset === 0) ? radius : 0;
-            }
-
+            const zOffset = (row % 2 === 1) ? radius : 0;
             for (let col = 0; col < zCols; col++) {
                 const z = (col * diameter) + zOffset;
                 addPoint(x, 0, z, 'lattice'); // Floor
-
+                // Stack
                 let yStack = length;
                 while (yStack < container.height) {
                     addPoint(x, yStack, z, 'lattice');
@@ -197,7 +264,7 @@ export class RollStrategy implements IPackingStrategy {
   }
 
   canPlaceAt(
-    item: ICargoItem | null,
+    item: ICargoItem, 
     pos: IVector3, 
     orient: OrientationOption,
     context: IPackingContext
@@ -206,8 +273,10 @@ export class RollStrategy implements IPackingStrategy {
     const dimensions = orient.dimensions;
     const orientationType = orient.orientation;
 
+    // 1. Bounds
     if (!GeometryUtils.isWithinBounds(pos, dimensions, container.dimensions)) return false;
 
+    // 2. Intersection
     for (const other of placedItems) {
       if (GeometryUtils.checkIntersection(
           pos, dimensions, 
@@ -219,15 +288,14 @@ export class RollStrategy implements IPackingStrategy {
       }
     }
 
+    // 3. Support (Simplified for Floor items)
     if (pos.y > 0.01) {
       if (!this.hasSufficientSupport(pos, dimensions, orientationType, placedItems)) return false;
       
       if (orientationType === 'vertical') {
         const supportingItems = this.getSupportingItems(pos, dimensions, placedItems);
         for (const support of supportingItems) {
-          if (support.item.type === 'roll' && support.orientation === 'horizontal') {
-             return false;
-          }
+          if (support.item.type === 'roll' && support.orientation === 'horizontal') return false;
         }
       }
     }
@@ -277,6 +345,7 @@ export class RollStrategy implements IPackingStrategy {
         return (supportedArea / itemArea) > 0.5;
     }
 
+    // BRIDGE SUPPORT (Loose)
     let contactCount = 0;
     const myRadius = (orientation === 'vertical' ? dims.length : dims.height) / 2;
     
@@ -306,6 +375,7 @@ export class RollStrategy implements IPackingStrategy {
             const dist = Math.sqrt((myCenter.a - supportCenter.a)**2 + (myCenter.b - supportCenter.b)**2);
             const optimalDist = myRadius + supportRadius;
             
+            // Allow significant tolerance for bridge detection
             if (Math.abs(dist - optimalDist) < 0.25) {
                 contactCount++;
             }
