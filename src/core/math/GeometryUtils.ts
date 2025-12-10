@@ -4,8 +4,9 @@ export class GeometryUtils {
   private static readonly EPSILON = 0.001;
 
   /**
-   * Checks generic intersection.
-   * CRITICAL UPDATE: Roll-Roll logic is now prioritized to bypass AABB traps.
+   * Checks generic intersection between items.
+   * CRITICAL FIX: Roll-Roll checks are prioritized to bypass AABB (Bounding Box) logic.
+   * In hexagonal packing, bounding boxes MUST overlap, so standard AABB checks cause false positives.
    */
   static checkIntersection(
     pos1: IVector3,
@@ -18,24 +19,24 @@ export class GeometryUtils {
     orientation2: RollOrientation = 'vertical'
   ): boolean {
     
-    // 1. PRIORITY: ROLL vs ROLL
-    // We check this FIRST to avoid any "Bounding Box" logic interfering with Hexagonal packing.
-    // In Hex packing, Bounding Boxes MUST overlap, so standard AABB checks are misleading/dangerous here.
+    // 1. ÖNCELİKLİ KONTROL: RULO vs RULO (PRIORITY CHECK)
+    // Kutuların (Bounding Box) iç içe geçmesine aldırış etmeden doğrudan silindir matematiği yap.
     if (item1Type === 'roll' && item2Type === 'roll') {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
 
-    // 2. Standard AABB Check (First line of defense for others)
+    // 2. Standart AABB Kontrolü (Sadece Rulo OLMAYAN durumlar için güvenlik)
+    // Eğer ikisi de rulo değilse, kutu sınırları değmiyorsa çarpışma yoktur.
     if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
       return false;
     }
 
-    // 3. SAFEGUARD: If both are boxes, rely strictly on AABB.
+    // 3. KUTU vs KUTU
     if (item1Type === 'box' && item2Type === 'box') {
-      return true; 
+      return true; // AABB zaten yukarıda doğrulandı
     }
 
-    // 4. MIXED CHECKS (Roll vs Box)
+    // 4. KARIŞIK TİPLER (Rulo vs Kutu)
     if (item1Type === 'roll' && item2Type !== 'roll') {
       return this.checkBoxCylinderIntersection(pos2, dim2, pos1, dim1, orientation1);
     }
@@ -80,7 +81,7 @@ export class GeometryUtils {
     );
   }
 
-  // --- PRIVATE CYLINDER MATH ---
+  // --- SİLİNDİR MATEMATİĞİ (PRIVATE) ---
 
   private static checkCylinderCylinderIntersection(
     pos1: IVector3,
@@ -90,13 +91,15 @@ export class GeometryUtils {
     dim2: IDimensions,
     orient2: RollOrientation
   ): boolean {
-    // AGGRESSIVE TOLERANCE: Allow up to 0.5cm overlap.
+    // TOLERANS: 5mm (Petek yapıda sürtünme payı)
     const ALLOWED_OVERLAP = 0.005; 
 
     if (orient1 === orient2) {
       if (orient1 === 'vertical') {
+        // Yükseklik (Y) kontrolü
         if (!this.checkIntervalOverlap(pos1.y, dim1.height, pos2.y, dim2.height)) return false;
         
+        // Daire Mesafe Kontrolü (X-Z Düzlemi)
         const r1 = dim1.length / 2;
         const r2 = dim2.length / 2;
         const c1x = pos1.x + r1; const c1z = pos1.z + r1;
@@ -105,10 +108,11 @@ export class GeometryUtils {
         const distSq = (c1x - c2x) ** 2 + (c1z - c2z) ** 2;
         const minAllowedDist = r1 + r2 - ALLOWED_OVERLAP;
         
+        // Eğer merkezler arası mesafe, yarıçaplar toplamından küçükse çarpışma vardır.
         return distSq < minAllowedDist * minAllowedDist;
       } 
       else {
-        // Horizontal
+        // Yatay (Horizontal) Kontrol
         const isX1 = dim1.length > dim1.width;
         const isX2 = dim2.length > dim2.width;
 
@@ -119,15 +123,16 @@ export class GeometryUtils {
            
            if (!longAxisOverlap) return false;
 
+           // Kesit Alanı Kontrolü
            const r1 = dim1.height / 2;
            const r2 = dim2.height / 2;
            
            let distSq = 0;
-           if (isX1) { // Y-Z
+           if (isX1) { // Kesit Y-Z
              const c1y = pos1.y + r1; const c1z = pos1.z + r1;
              const c2y = pos2.y + r2; const c2z = pos2.z + r2;
              distSq = (c1y - c2y) ** 2 + (c1z - c2z) ** 2;
-           } else { // X-Y
+           } else { // Kesit X-Y
              const c1x = pos1.x + r1; const c1y = pos1.y + r1;
              const c2x = pos2.x + r2; const c2y = pos2.y + r2;
              distSq = (c1x - c2x) ** 2 + (c1y - c2y) ** 2;
@@ -138,6 +143,7 @@ export class GeometryUtils {
         }
       }
     }
+    // Farklı oryantasyonlar için varsayılan güvenli dönüş
     return true; 
   }
 
