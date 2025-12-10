@@ -5,8 +5,10 @@ export class GeometryUtils {
 
   /**
    * Checks generic intersection.
-   * SAFEGUARD: Boxes use strict AABB logic (Legacy Safe).
-   * Rolls use relaxed overlap logic to allow tight packing.
+   * STRICT ORDER: 
+   * 1. Roll-Roll (Cylinder Math) - Bypasses AABB
+   * 2. AABB Check (Standard optimization)
+   * 3. Box checks
    */
   static checkIntersection(
     pos1: IVector3,
@@ -18,21 +20,24 @@ export class GeometryUtils {
     orientation1: RollOrientation = 'vertical',
     orientation2: RollOrientation = 'vertical'
   ): boolean {
-    // 1. AABB Check (First line of defense)
-    if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
-      return false;
-    }
-
-    // SAFEGUARD: If both are boxes, rely strictly on AABB.
-    if (item1Type === 'box' && item2Type === 'box') {
-      return true; 
-    }
-
-    // --- ROLL SPECIFIC LOGIC ---
+    
+    // 1. PRIORITY: ROLL vs ROLL
+    // Ignore Bounding Boxes. Use pure cylinder distance math.
     if (item1Type === 'roll' && item2Type === 'roll') {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
 
+    // 2. Standard AABB Check (Optimization)
+    if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
+      return false;
+    }
+
+    // 3. BOX vs BOX
+    if (item1Type === 'box' && item2Type === 'box') {
+      return true; 
+    }
+
+    // 4. MIXED CHECKS
     if (item1Type === 'roll' && item2Type !== 'roll') {
       return this.checkBoxCylinderIntersection(pos2, dim2, pos1, dim1, orientation1);
     }
@@ -77,7 +82,7 @@ export class GeometryUtils {
     );
   }
 
-  // --- PRIVATE CYLINDER MATH ---
+  // --- PRIVATE MATH ---
 
   private static checkCylinderCylinderIntersection(
     pos1: IVector3,
@@ -87,7 +92,7 @@ export class GeometryUtils {
     dim2: IDimensions,
     orient2: RollOrientation
   ): boolean {
-    // AGGRESSIVE TOLERANCE: Allow 5mm overlap to ensure mathematical lattice points fit.
+    // TOLERANCE: 5mm overlap allowed for tight packing
     const ALLOWED_OVERLAP = 0.005; 
 
     if (orient1 === orient2) {
@@ -96,10 +101,8 @@ export class GeometryUtils {
         
         const r1 = dim1.length / 2;
         const r2 = dim2.length / 2;
-        const c1x = pos1.x + r1;
-        const c1z = pos1.z + r1;
-        const c2x = pos2.x + r2;
-        const c2z = pos2.z + r2;
+        const c1x = pos1.x + r1; const c1z = pos1.z + r1;
+        const c2x = pos2.x + r2; const c2z = pos2.z + r2;
         
         const distSq = (c1x - c2x) ** 2 + (c1z - c2z) ** 2;
         const minAllowedDist = r1 + r2 - ALLOWED_OVERLAP;
@@ -107,7 +110,7 @@ export class GeometryUtils {
         return distSq < minAllowedDist * minAllowedDist;
       } 
       else {
-        // Horizontal logic
+        // Horizontal
         const isX1 = dim1.length > dim1.width;
         const isX2 = dim2.length > dim2.width;
 
@@ -122,11 +125,11 @@ export class GeometryUtils {
            const r2 = dim2.height / 2;
            
            let distSq = 0;
-           if (isX1) { // Section Y-Z
+           if (isX1) { // Y-Z Plane
              const c1y = pos1.y + r1; const c1z = pos1.z + r1;
              const c2y = pos2.y + r2; const c2z = pos2.z + r2;
              distSq = (c1y - c2y) ** 2 + (c1z - c2z) ** 2;
-           } else { // Section X-Y
+           } else { // X-Y Plane
              const c1x = pos1.x + r1; const c1y = pos1.y + r1;
              const c2x = pos2.x + r2; const c2y = pos2.y + r2;
              distSq = (c1x - c2x) ** 2 + (c1y - c2y) ** 2;
@@ -151,17 +154,17 @@ export class GeometryUtils {
     const radius = (cylOrient === 'vertical' ? cylDim.length : cylDim.height) / 2;
     
     if (cylOrient === 'vertical') {
-       const cx = cylPos.x + radius;
-       const cz = cylPos.z + radius;
+       const cx = cylPos.x + radius; const cz = cylPos.z + radius;
        const clampedX = Math.max(boxPos.x, Math.min(cx, boxPos.x + boxDim.length));
        const clampedZ = Math.max(boxPos.z, Math.min(cz, boxPos.z + boxDim.width));
        const distSq = (cx - clampedX) ** 2 + (cz - clampedZ) ** 2;
        const yOverlap = this.checkIntervalOverlap(boxPos.y, boxDim.height, cylPos.y, cylDim.height);
+       
        const minDist = radius - ALLOWED_OVERLAP;
        return yOverlap && (distSq < minDist * minDist);
     } 
     else {
-      // Horizontal checks...
+      // Horizontal
       const isXAxis = cylDim.length > cylDim.width;
       if (isXAxis) {
           const cy = cylPos.y + radius; const cz = cylPos.z + radius;
