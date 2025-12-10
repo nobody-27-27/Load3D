@@ -22,7 +22,6 @@ export class RollStrategy implements IPackingStrategy {
   ): { position: IVector3; rotation: number; orientation: string; dimensions: IDimensions } | null {
     const { container, placedItems } = context;
     
-    // 1. Determine Dimensions
     let rollDiameter = 0;
     let rollLength = 0;
 
@@ -44,15 +43,14 @@ export class RollStrategy implements IPackingStrategy {
 
     const orientations = this.getOrientations(rollDiameter, rollLength, item.isPalletized);
 
-    // 2. Generate Points (Directional Lattice)
+    // 2. Generate Only the BEST Lattice Points
     const candidatePoints = this.generateCandidatePoints(placedItems, container.dimensions, rollDiameter, rollLength);
 
     // 3. Find Best Fit
     for (const point of candidatePoints) {
       for (const orient of orientations) {
         
-        // PETEK NOKTALARI (LATTICE)
-        // Bu noktalar hassas hesaplanmıştır, kaydırma (Nudge) yapma.
+        // Petek noktaları kesindir. Kaydırma (Nudge) yapma.
         if (point.type === 'lattice') {
              if (this.canPlaceAt(null, point.position, orient, context)) {
                  return {
@@ -63,7 +61,6 @@ export class RollStrategy implements IPackingStrategy {
                  };
              }
         } else {
-             // Standart noktalar için kaydırma dene
              const finalPos = this.tryNudgePosition(point.position, orient, context);
              if (finalPos) {
                 return {
@@ -94,40 +91,32 @@ export class RollStrategy implements IPackingStrategy {
   private optimizeCoordinate(pos: IVector3, orient: OrientationOption, context: IPackingContext): IVector3 {
     let bestPos = { ...pos };
     const step = 0.05; 
-    
     while (bestPos.z - step >= 0) {
       const testPos = { ...bestPos, z: bestPos.z - step };
-      if (this.canPlaceAt(null, testPos, orient, context)) {
-        bestPos = testPos;
-      } else { break; }
+      if (this.canPlaceAt(null, testPos, orient, context)) bestPos = testPos;
+      else break; 
     }
     while (bestPos.x - step >= 0) {
       const testPos = { ...bestPos, x: bestPos.x - step };
-      if (this.canPlaceAt(null, testPos, orient, context)) {
-        bestPos = testPos;
-      } else { break; }
+      if (this.canPlaceAt(null, testPos, orient, context)) bestPos = testPos;
+      else break;
     }
     return bestPos;
   }
 
   private getOrientations(diameter: number, length: number, isPalletized?: boolean): OrientationOption[] {
     const options: OrientationOption[] = [];
-
-    // Vertical
     options.push({
       dimensions: { length: diameter, width: diameter, height: length },
       rotation: 0,
       orientation: 'vertical'
     });
-
     if (!isPalletized) {
-      // Horizontal X
       options.push({
         dimensions: { length: length, width: diameter, height: diameter },
         rotation: 0,
         orientation: 'horizontal'
       });
-      // Horizontal Z
       options.push({
         dimensions: { length: diameter, width: length, height: diameter },
         rotation: 90,
@@ -154,15 +143,15 @@ export class RollStrategy implements IPackingStrategy {
       if (!pointSet.has(key)) {
         pointSet.add(key);
         let score = (y * 10000) + (z * 100) + x;
-        if (type === 'lattice') score -= 1000000; // En yüksek öncelik
+        if (type === 'lattice') score -= 1000000; 
         points.push({ position: { x, y, z }, score, type });
       }
     };
 
-    // 1. ÇİFT YÖNLÜ PETEK DİZİLİMİ (Directional Lattice)
-    this.generateDirectionalLattice(containerDims, currentDiameter, currentLength, addPoint);
+    // 1. SMART LATTICE GENERATION
+    this.generateSmartLattice(containerDims, currentDiameter, currentLength, addPoint);
 
-    // 2. Standart Köşeler
+    // 2. Fallback Grid (Sadece Petek dolarsa)
     addPoint(0, 0, 0, 'corner');
     for (const item of placedItems) {
       const pos = item.position;
@@ -177,57 +166,69 @@ export class RollStrategy implements IPackingStrategy {
   }
 
   /**
-   * Hem X ekseninde hem Z ekseninde petek dizilimlerini dener.
-   * Bu sayede konteynerin enine veya boyuna göre en iyi sıkıştırmayı bulur.
+   * Calculates the best Hexagonal orientation (Along X or Along Z) 
+   * and generates ONLY that lattice to prevent "Greedy Grid" fallback.
    */
-  private generateDirectionalLattice(
+  private generateSmartLattice(
     container: IDimensions, 
     diameter: number, 
     length: number,
     addPoint: (x: number, y: number, z: number, type: 'lattice') => void
   ) {
     const radius = diameter / 2;
-    const hexStep = diameter * 0.8660254; // sin(60)*D
+    const hexStep = diameter * 0.8660254; 
     
-    // YÖN 1: Satırlar Z ekseni boyunca (Mevcut mantık)
-    // Z ekseninde ilerler, X ekseninde zikzak yapar.
-    const zRows = Math.floor((container.width - diameter) / hexStep) + 2; 
-    const xCols = Math.floor(container.length / diameter) + 2;
+    // Calculate theoretical capacity for Pattern Z (Rows along Z axis)
+    const zRows_Z = Math.floor((container.width - diameter) / hexStep) + 1;
+    const zCols_Z = Math.floor(container.length / diameter);
+    const capacityZ = zRows_Z * zCols_Z; // Approximate
 
-    for (let row = 0; row < zRows; row++) {
-      const z = row * hexStep;
-      const xOffset = (row % 2 === 1) ? radius : 0;
-      
-      for (let col = 0; col < xCols; col++) {
-        const x = (col * diameter) + xOffset;
-        addPoint(x, 0, z, 'lattice'); // Zemin
-        
-        let yStack = length; // Üst üste
-        while (yStack < container.height) {
-           addPoint(x, yStack, z, 'lattice');
-           yStack += length;
-        }
-      }
-    }
+    // Calculate theoretical capacity for Pattern X (Rows along X axis)
+    const xRows_X = Math.floor((container.length - diameter) / hexStep) + 1;
+    const xCols_X = Math.floor(container.width / diameter);
+    const capacityX = xRows_X * xCols_X;
 
-    // YÖN 2: Satırlar X ekseni boyunca (YENİ MANTIK - Rotated Lattice)
-    // X ekseninde ilerler, Z ekseninde zikzak yapar.
-    const xRows = Math.floor((container.length - diameter) / hexStep) + 2;
-    const zCols = Math.floor((container.width / diameter) + 2); // Bu sefer sütunlar Z'de
+    // DECISION: Which pattern is denser?
+    const usePatternX = capacityX > capacityZ;
 
-    for (let row = 0; row < xRows; row++) {
-        const x = row * hexStep; // X ekseninde sıkışık ilerle
-        const zOffset = (row % 2 === 1) ? radius : 0;
+    if (!usePatternX) {
+        // PATTERN Z: Standard (Rows along Z, Zigzag in X)
+        const zRows = Math.floor((container.width - diameter) / hexStep) + 2; 
+        const xCols = Math.floor(container.length / diameter) + 1;
 
-        for (let col = 0; col < zCols; col++) {
-            const z = (col * diameter) + zOffset; // Z ekseninde geniş diz
+        for (let row = 0; row < zRows; row++) {
+          const z = row * hexStep;
+          const xOffset = (row % 2 === 1) ? radius : 0;
+          
+          for (let col = 0; col < xCols; col++) {
+            const x = (col * diameter) + xOffset;
+            addPoint(x, 0, z, 'lattice');
             
-            addPoint(x, 0, z, 'lattice'); // Zemin
-
             let yStack = length;
             while (yStack < container.height) {
-                addPoint(x, yStack, z, 'lattice');
-                yStack += length;
+               addPoint(x, yStack, z, 'lattice');
+               yStack += length;
+            }
+          }
+        }
+    } else {
+        // PATTERN X: Rotated (Rows along X, Zigzag in Z)
+        const xRows = Math.floor((container.length - diameter) / hexStep) + 2;
+        const zCols = Math.floor(container.width / diameter) + 1;
+
+        for (let row = 0; row < xRows; row++) {
+            const x = row * hexStep;
+            const zOffset = (row % 2 === 1) ? radius : 0;
+
+            for (let col = 0; col < zCols; col++) {
+                const z = (col * diameter) + zOffset;
+                addPoint(x, 0, z, 'lattice');
+
+                let yStack = length;
+                while (yStack < container.height) {
+                    addPoint(x, yStack, z, 'lattice');
+                    yStack += length;
+                }
             }
         }
     }
