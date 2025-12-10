@@ -20,7 +20,7 @@ export class GeometryUtils {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
 
-    // 2. AABB (Kutu Sınırları) Kontrolü
+    // 2. AABB Kontrolü
     if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
       return false;
     }
@@ -64,18 +64,17 @@ export class GeometryUtils {
     dimensions: IDimensions,
     containerDimensions: IDimensions
   ): boolean {
-    const eps = this.EPSILON;
+    // TOLERANS: Duvar kenarında 1mm hata payı bırak
+    const BOUNDS_TOLERANCE = 0.001;
     return (
-      position.x >= -eps &&
-      position.y >= -eps &&
-      position.z >= -eps &&
-      position.x + dimensions.length <= containerDimensions.length + eps &&
-      position.y + dimensions.height <= containerDimensions.height + eps &&
-      position.z + dimensions.width <= containerDimensions.width + eps
+      position.x >= -BOUNDS_TOLERANCE &&
+      position.y >= -BOUNDS_TOLERANCE &&
+      position.z >= -BOUNDS_TOLERANCE &&
+      position.x + dimensions.length <= containerDimensions.length + BOUNDS_TOLERANCE &&
+      position.y + dimensions.height <= containerDimensions.height + BOUNDS_TOLERANCE &&
+      position.z + dimensions.width <= containerDimensions.width + BOUNDS_TOLERANCE
     );
   }
-
-  // --- PRIVATE MATH ---
 
   private static checkCylinderCylinderIntersection(
     pos1: IVector3,
@@ -85,8 +84,8 @@ export class GeometryUtils {
     dim2: IDimensions,
     orient2: RollOrientation
   ): boolean {
-    // 5mm Tolerance for soft packing
-    const ALLOWED_OVERLAP = 0.005; 
+    // 1cm Tolerans (Rahat Yerleşim İçin)
+    const ALLOWED_OVERLAP = 0.01; 
 
     if (orient1 === orient2) {
       if (orient1 === 'vertical') {
@@ -103,7 +102,6 @@ export class GeometryUtils {
         return distSq < minAllowedDist * minAllowedDist;
       } 
       else {
-        // Horizontal
         const isX1 = dim1.length > dim1.width;
         const isX2 = dim2.length > dim2.width;
 
@@ -118,11 +116,11 @@ export class GeometryUtils {
            const r2 = dim2.height / 2;
            
            let distSq = 0;
-           if (isX1) { // Y-Z
+           if (isX1) { 
              const c1y = pos1.y + r1; const c1z = pos1.z + r1;
              const c2y = pos2.y + r2; const c2z = pos2.z + r2;
              distSq = (c1y - c2y) ** 2 + (c1z - c2z) ** 2;
-           } else { // X-Y
+           } else { 
              const c1x = pos1.x + r1; const c1y = pos1.y + r1;
              const c2x = pos2.x + r2; const c2y = pos2.y + r2;
              distSq = (c1x - c2x) ** 2 + (c1y - c2y) ** 2;
@@ -143,7 +141,7 @@ export class GeometryUtils {
     cylDim: IDimensions,
     cylOrient: RollOrientation
   ): boolean {
-    const ALLOWED_OVERLAP = 0.005;
+    const ALLOWED_OVERLAP = 0.01;
     const radius = (cylOrient === 'vertical' ? cylDim.length : cylDim.height) / 2;
     
     if (cylOrient === 'vertical') {
@@ -157,7 +155,6 @@ export class GeometryUtils {
        return yOverlap && (distSq < minDist * minDist);
     } 
     else {
-      // Horizontal
       const isXAxis = cylDim.length > cylDim.width;
       if (isXAxis) {
           const cy = cylPos.y + radius; const cz = cylPos.z + radius;
