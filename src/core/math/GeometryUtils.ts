@@ -1,7 +1,8 @@
 import type { IVector3, IDimensions, RollOrientation } from '../types';
 
 export class GeometryUtils {
-  private static readonly EPSILON = 0.001;
+  // Genel toleransı artırdık (1mm -> 1cm)
+  private static readonly EPSILON = 0.01;
 
   static checkIntersection(
     pos1: IVector3,
@@ -20,17 +21,17 @@ export class GeometryUtils {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
 
-    // 2. AABB Kontrolü
+    // 2. AABB Check
     if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
       return false;
     }
 
-    // 3. Kutu - Kutu
+    // 3. BOX vs BOX
     if (item1Type === 'box' && item2Type === 'box') {
       return true; 
     }
 
-    // 4. Karışık
+    // 4. MIXED
     if (item1Type === 'roll' && item2Type !== 'roll') {
       return this.checkBoxCylinderIntersection(pos2, dim2, pos1, dim1, orientation1);
     }
@@ -48,7 +49,8 @@ export class GeometryUtils {
     pos2: IVector3,
     dim2: IDimensions
   ): boolean {
-    const eps = this.EPSILON;
+    // AABB için daha sıkı bir epsilon kullanabiliriz
+    const eps = 0.001;
     return (
       pos1.x < pos2.x + dim2.length - eps &&
       pos1.x + dim1.length > pos2.x + eps &&
@@ -64,17 +66,19 @@ export class GeometryUtils {
     dimensions: IDimensions,
     containerDimensions: IDimensions
   ): boolean {
-    // TOLERANS: Duvar kenarında 1mm hata payı bırak
-    const BOUNDS_TOLERANCE = 0.001;
+    // Sınır kontrolünde 1mm tolerans tanı
+    const TOLERANCE = 0.001;
     return (
-      position.x >= -BOUNDS_TOLERANCE &&
-      position.y >= -BOUNDS_TOLERANCE &&
-      position.z >= -BOUNDS_TOLERANCE &&
-      position.x + dimensions.length <= containerDimensions.length + BOUNDS_TOLERANCE &&
-      position.y + dimensions.height <= containerDimensions.height + BOUNDS_TOLERANCE &&
-      position.z + dimensions.width <= containerDimensions.width + BOUNDS_TOLERANCE
+      position.x >= -TOLERANCE &&
+      position.y >= -TOLERANCE &&
+      position.z >= -TOLERANCE &&
+      position.x + dimensions.length <= containerDimensions.length + TOLERANCE &&
+      position.y + dimensions.height <= containerDimensions.height + TOLERANCE &&
+      position.z + dimensions.width <= containerDimensions.width + TOLERANCE
     );
   }
+
+  // --- PRIVATE MATH ---
 
   private static checkCylinderCylinderIntersection(
     pos1: IVector3,
@@ -84,7 +88,7 @@ export class GeometryUtils {
     dim2: IDimensions,
     orient2: RollOrientation
   ): boolean {
-    // 1cm Tolerans (Rahat Yerleşim İçin)
+    // 1cm Tolerance for soft packing (Kissing circles)
     const ALLOWED_OVERLAP = 0.01; 
 
     if (orient1 === orient2) {
@@ -102,6 +106,7 @@ export class GeometryUtils {
         return distSq < minAllowedDist * minAllowedDist;
       } 
       else {
+        // Horizontal logic
         const isX1 = dim1.length > dim1.width;
         const isX2 = dim2.length > dim2.width;
 
@@ -116,11 +121,11 @@ export class GeometryUtils {
            const r2 = dim2.height / 2;
            
            let distSq = 0;
-           if (isX1) { 
+           if (isX1) { // Y-Z plane
              const c1y = pos1.y + r1; const c1z = pos1.z + r1;
              const c2y = pos2.y + r2; const c2z = pos2.z + r2;
              distSq = (c1y - c2y) ** 2 + (c1z - c2z) ** 2;
-           } else { 
+           } else { // X-Y plane
              const c1x = pos1.x + r1; const c1y = pos1.y + r1;
              const c2x = pos2.x + r2; const c2y = pos2.y + r2;
              distSq = (c1x - c2x) ** 2 + (c1y - c2y) ** 2;
@@ -177,7 +182,8 @@ export class GeometryUtils {
   }
 
   private static checkIntervalOverlap(min1: number, len1: number, min2: number, len2: number): boolean {
-    const eps = this.EPSILON;
+    // Interval check needs strict epsilon to avoid "just touching" being false
+    const eps = 0.001; 
     return min1 < min2 + len2 - eps && min1 + len1 > min2 + eps;
   }
 }
