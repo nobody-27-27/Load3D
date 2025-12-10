@@ -22,7 +22,6 @@ export class RollStrategy implements IPackingStrategy {
   ): { position: IVector3; rotation: number; orientation: string; dimensions: IDimensions } | null {
     const { container, placedItems } = context;
     
-    // 1. Determine Dimensions
     let rollDiameter = 0;
     let rollLength = 0;
 
@@ -44,16 +43,14 @@ export class RollStrategy implements IPackingStrategy {
 
     const orientations = this.getOrientations(rollDiameter, rollLength, item.isPalletized);
 
-    // 2. Generate Points (Forcing Lattice Logic)
+    // 2. GENERATE POINTS (Multi-Pattern Lattice)
     const candidatePoints = this.generateCandidatePoints(placedItems, container.dimensions, rollDiameter, rollLength);
 
-    // 3. Find Best Fit
+    // 3. FIND BEST FIT
     for (const point of candidatePoints) {
       for (const orient of orientations) {
         
-        // FORCED LATTICE POINTS:
-        // Use them exactly as calculated. Do NOT optimize/nudge them.
-        // Nudging pushes them back into a grid, which we want to avoid.
+        // DO NOT NUDGE LATTICE POINTS. They are mathematically perfect.
         if (point.type === 'lattice') {
              if (this.canPlaceAt(null, point.position, orient, context)) {
                  return {
@@ -64,7 +61,7 @@ export class RollStrategy implements IPackingStrategy {
                  };
              }
         } else {
-             // Standard corners (fallback) -> Try Nudge
+             // Standard corners -> Try Nudge
              const finalPos = this.tryNudgePosition(point.position, orient, context);
              if (finalPos) {
                 return {
@@ -92,7 +89,6 @@ export class RollStrategy implements IPackingStrategy {
     return null;
   }
 
-  // Generic gravity slide for non-lattice points
   private optimizeCoordinate(pos: IVector3, orient: OrientationOption, context: IPackingContext): IVector3 {
     let bestPos = { ...pos };
     const step = 0.05; 
@@ -149,29 +145,22 @@ export class RollStrategy implements IPackingStrategy {
     const pointSet = new Set<string>();
 
     const addPoint = (x: number, y: number, z: number, type: 'corner' | 'groove' | 'lattice') => {
-      // Safety bounds
       if (x < -0.01 || y < -0.01 || z < -0.01) return;
       if (x > containerDims.length || y > containerDims.height || z > containerDims.width) return;
 
       const key = `${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`;
       if (!pointSet.has(key)) {
         pointSet.add(key);
-        
-        // PRIORITY SCORING
         let score = (y * 10000) + (z * 100) + x;
-        
-        // Lattice points get SUPER priority (-1M) so they are checked BEFORE grid points (0)
-        if (type === 'lattice') score -= 1000000; 
-        
+        if (type === 'lattice') score -= 100000; 
         points.push({ position: { x, y, z }, score, type });
       }
     };
 
-    // 1. GENERATE FIXED HEX LATTICE
-    // This forces the algorithm to try the "HoneyComb" pattern first.
-    this.generateFixedHexPoints(containerDims, currentDiameter, currentLength, addPoint);
+    // 1. MULTI-PATTERN LATTICE
+    this.generateMultiPatternLattice(containerDims, currentDiameter, currentLength, addPoint);
 
-    // 2. Standard Grid Corners (Fallback)
+    // 2. Grid Fallback
     addPoint(0, 0, 0, 'corner');
     for (const item of placedItems) {
       const pos = item.position;
@@ -185,50 +174,50 @@ export class RollStrategy implements IPackingStrategy {
     return points.sort((a, b) => a.score - b.score);
   }
 
-  /**
-   * Generates strictly calculated Hexagonal Lattice points.
-   * This corresponds to a "Triangular Packing" layout on the floor.
-   */
-  private generateFixedHexPoints(
+  private generateMultiPatternLattice(
     container: IDimensions, 
     diameter: number, 
     length: number,
     addPoint: (x: number, y: number, z: number, type: 'lattice') => void
   ) {
     const radius = diameter / 2;
-    // The Z-distance between rows in hex packing is D * sin(60)
-    const rowHeight = diameter * 0.8660254; 
+    const hexStep = diameter * 0.8660254; // sin(60)*D
     
-    // We iterate "Rows" along the Z axis (depth), and "Cols" along X axis (width).
-    // Note: Z is the depth of the container, X is the width.
-    
-    // Calculate how many rows fit in Z
-    const numRowsZ = Math.floor((container.width - diameter) / rowHeight) + 2;
-    // Calculate how many cols fit in X
-    const numColsX = Math.floor(container.length / diameter) + 2;
-
-    for (let row = 0; row < numRowsZ; row++) {
-      // Z position for this row
-      const z = row * rowHeight;
-      
-      // Hex Logic: Every ODD row is shifted by Radius (Half Diameter)
-      const isShifted = (row % 2 === 1);
-      const xOffset = isShifted ? radius : 0;
-      
-      for (let col = 0; col < numColsX; col++) {
-        const x = (col * diameter) + xOffset;
+    // PATTERN GENERATION
+    // We try 2 distinct floor patterns (Regular vs Shifted Start)
+    for (let pattern = 0; pattern < 2; pattern++) {
         
-        // Add floor point
-        addPoint(x, 0, z, 'lattice');
+        const zRows = Math.floor((container.width - diameter) / hexStep) + 3; 
+        const xCols = Math.floor(container.length / diameter) + 2;
 
-        // Add vertical stacking points (columns)
-        let yStack = length;
-        while (yStack < container.height) {
-           addPoint(x, yStack, z, 'lattice');
-           yStack += length;
+        for (let row = 0; row < zRows; row++) {
+          const z = row * hexStep;
+          
+          const isShiftedRow = (row % 2 === 1);
+          let xOffset = isShiftedRow ? radius : 0;
+          
+          // Pattern 1: Invert the shift logic (Start with shift)
+          if (pattern === 1) {
+              xOffset = (xOffset === 0) ? radius : 0;
+          }
+
+          for (let col = 0; col < xCols; col++) {
+            const x = (col * diameter) + xOffset;
+            
+            // Floor Point
+            addPoint(x, 0, z, 'lattice');
+            
+            // Stack Points
+            let yStack = length;
+            while (yStack < container.height) {
+               addPoint(x, yStack, z, 'lattice');
+               yStack += length;
+            }
+          }
         }
-      }
     }
+    
+    // (Optional) Horizontal patterns could be added here, simplified for brevity as vertical is priority.
   }
 
   canPlaceAt(
