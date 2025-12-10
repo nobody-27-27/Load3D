@@ -3,6 +3,10 @@ import type { IVector3, IDimensions, RollOrientation } from '../types';
 export class GeometryUtils {
   private static readonly EPSILON = 0.001;
 
+  /**
+   * Checks generic intersection.
+   * CRITICAL UPDATE: Roll-Roll logic is now prioritized to bypass AABB traps.
+   */
   static checkIntersection(
     pos1: IVector3,
     dim1: IDimensions,
@@ -13,18 +17,25 @@ export class GeometryUtils {
     orientation1: RollOrientation = 'vertical',
     orientation2: RollOrientation = 'vertical'
   ): boolean {
-    // 1. AABB Check
-    if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
-      return false;
-    }
-
-    if (item1Type === 'box' && item2Type === 'box') return true; 
-
-    // --- ROLL LOGIC ---
+    
+    // 1. PRIORITY: ROLL vs ROLL
+    // We check this FIRST to avoid any "Bounding Box" logic interfering with Hexagonal packing.
+    // In Hex packing, Bounding Boxes MUST overlap, so standard AABB checks are misleading/dangerous here.
     if (item1Type === 'roll' && item2Type === 'roll') {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
 
+    // 2. Standard AABB Check (First line of defense for others)
+    if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
+      return false;
+    }
+
+    // 3. SAFEGUARD: If both are boxes, rely strictly on AABB.
+    if (item1Type === 'box' && item2Type === 'box') {
+      return true; 
+    }
+
+    // 4. MIXED CHECKS (Roll vs Box)
     if (item1Type === 'roll' && item2Type !== 'roll') {
       return this.checkBoxCylinderIntersection(pos2, dim2, pos1, dim1, orientation1);
     }
@@ -69,7 +80,7 @@ export class GeometryUtils {
     );
   }
 
-  // --- PRIVATE MATH ---
+  // --- PRIVATE CYLINDER MATH ---
 
   private static checkCylinderCylinderIntersection(
     pos1: IVector3,
@@ -79,8 +90,7 @@ export class GeometryUtils {
     dim2: IDimensions,
     orient2: RollOrientation
   ): boolean {
-    // ALLOWED OVERLAP: 5mm. 
-    // This allows items to fit into the calculated lattice points without floating point rejection.
+    // AGGRESSIVE TOLERANCE: Allow up to 0.5cm overlap.
     const ALLOWED_OVERLAP = 0.005; 
 
     if (orient1 === orient2) {
@@ -113,11 +123,11 @@ export class GeometryUtils {
            const r2 = dim2.height / 2;
            
            let distSq = 0;
-           if (isX1) { // Section Y-Z
+           if (isX1) { // Y-Z
              const c1y = pos1.y + r1; const c1z = pos1.z + r1;
              const c2y = pos2.y + r2; const c2z = pos2.z + r2;
              distSq = (c1y - c2y) ** 2 + (c1z - c2z) ** 2;
-           } else { // Section X-Y
+           } else { // X-Y
              const c1x = pos1.x + r1; const c1y = pos1.y + r1;
              const c2x = pos2.x + r2; const c2y = pos2.y + r2;
              distSq = (c1x - c2x) ** 2 + (c1y - c2y) ** 2;
