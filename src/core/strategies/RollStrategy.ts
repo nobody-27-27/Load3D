@@ -43,14 +43,14 @@ export class RollStrategy implements IPackingStrategy {
 
     const orientations = this.getOrientations(rollDiameter, rollLength, item.isPalletized);
 
-    // 2. GENERATE POINTS (Multi-Pattern Lattice)
+    // 2. Generate Candidate Points (Includes Multi-Pattern Lattice)
     const candidatePoints = this.generateCandidatePoints(placedItems, container.dimensions, rollDiameter, rollLength);
 
-    // 3. FIND BEST FIT
+    // 3. Find Best Fit
     for (const point of candidatePoints) {
       for (const orient of orientations) {
         
-        // DO NOT NUDGE LATTICE POINTS. They are mathematically perfect.
+        // If it's a Lattice point, DO NOT NUDGE. It is mathematically precise.
         if (point.type === 'lattice') {
              if (this.canPlaceAt(null, point.position, orient, context)) {
                  return {
@@ -61,7 +61,7 @@ export class RollStrategy implements IPackingStrategy {
                  };
              }
         } else {
-             // Standard corners -> Try Nudge
+             // For standard corners, try to nudge to close gaps
              const finalPos = this.tryNudgePosition(point.position, orient, context);
              if (finalPos) {
                 return {
@@ -157,10 +157,10 @@ export class RollStrategy implements IPackingStrategy {
       }
     };
 
-    // 1. MULTI-PATTERN LATTICE
+    // 1. GENERATE VIRTUAL LATTICE (Multi-Pattern)
     this.generateMultiPatternLattice(containerDims, currentDiameter, currentLength, addPoint);
 
-    // 2. Grid Fallback
+    // 2. Standard Corners (Fallback)
     addPoint(0, 0, 0, 'corner');
     for (const item of placedItems) {
       const pos = item.position;
@@ -181,10 +181,11 @@ export class RollStrategy implements IPackingStrategy {
     addPoint: (x: number, y: number, z: number, type: 'lattice') => void
   ) {
     const radius = diameter / 2;
-    const hexStep = diameter * 0.8660254; // sin(60)*D
+    const hexStep = diameter * 0.8660254; // sqrt(3)/2 * D
     
-    // PATTERN GENERATION
-    // We try 2 distinct floor patterns (Regular vs Shifted Start)
+    // PATTERN GENERATION: Try 2 variations of floor packing
+    // Pattern 0: Standard (Row 0 at 0)
+    // Pattern 1: Shifted (Row 0 at Radius)
     for (let pattern = 0; pattern < 2; pattern++) {
         
         const zRows = Math.floor((container.width - diameter) / hexStep) + 3; 
@@ -196,9 +197,8 @@ export class RollStrategy implements IPackingStrategy {
           const isShiftedRow = (row % 2 === 1);
           let xOffset = isShiftedRow ? radius : 0;
           
-          // Pattern 1: Invert the shift logic (Start with shift)
           if (pattern === 1) {
-              xOffset = (xOffset === 0) ? radius : 0;
+              xOffset = (xOffset === 0) ? radius : 0; // Invert shift
           }
 
           for (let col = 0; col < xCols; col++) {
@@ -216,8 +216,6 @@ export class RollStrategy implements IPackingStrategy {
           }
         }
     }
-    
-    // (Optional) Horizontal patterns could be added here, simplified for brevity as vertical is priority.
   }
 
   canPlaceAt(
