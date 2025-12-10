@@ -1,8 +1,7 @@
 import type { IVector3, IDimensions, RollOrientation } from '../types';
 
 export class GeometryUtils {
-  // Toleransı artırdık (1cm) - Donma sebebi bu değil ama yerleşim başarısı için gerekli
-  private static readonly EPSILON = 0.01;
+  private static readonly EPSILON = 0.01; // 1cm Tolerans
 
   static checkIntersection(
     pos1: IVector3,
@@ -16,25 +15,23 @@ export class GeometryUtils {
   ): boolean {
     
     // 1. ÖNCELİK: RULO - RULO
+    // AABB'yi atla, direkt silindir hesabı yap.
     if (item1Type === 'roll' && item2Type === 'roll') {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
 
-    // 2. AABB
+    // 2. AABB (Kutu Sınırları)
     if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
       return false;
     }
 
     // 3. KUTU - KUTU
-    if (item1Type === 'box' && item2Type === 'box') {
-      return true; 
-    }
+    if (item1Type === 'box' && item2Type === 'box') return true; 
 
     // 4. KARIŞIK
     if (item1Type === 'roll' && item2Type !== 'roll') {
       return this.checkBoxCylinderIntersection(pos2, dim2, pos1, dim1, orientation1);
     }
-    
     if (item1Type !== 'roll' && item2Type === 'roll') {
       return this.checkBoxCylinderIntersection(pos1, dim1, pos2, dim2, orientation2);
     }
@@ -48,7 +45,7 @@ export class GeometryUtils {
     pos2: IVector3,
     dim2: IDimensions
   ): boolean {
-    const eps = 0.001; // AABB için hassas olmalı
+    const eps = 0.001;
     return (
       pos1.x < pos2.x + dim2.length - eps &&
       pos1.x + dim1.length > pos2.x + eps &&
@@ -64,7 +61,6 @@ export class GeometryUtils {
     dimensions: IDimensions,
     containerDimensions: IDimensions
   ): boolean {
-    // Sınır kontrolü için 1mm tolerans
     const TOL = 0.001;
     return (
       position.x >= -TOL &&
@@ -84,7 +80,6 @@ export class GeometryUtils {
     dim2: IDimensions,
     orient2: RollOrientation
   ): boolean {
-    // 1cm Tolerans (Petek yerleşimi için kritik)
     const ALLOWED_OVERLAP = 0.01; 
 
     if (orient1 === orient2) {
@@ -150,7 +145,6 @@ export class GeometryUtils {
        const clampedZ = Math.max(boxPos.z, Math.min(cz, boxPos.z + boxDim.width));
        const distSq = (cx - clampedX) ** 2 + (cz - clampedZ) ** 2;
        const yOverlap = this.checkIntervalOverlap(boxPos.y, boxDim.height, cylPos.y, cylDim.height);
-       
        const minDist = radius - ALLOWED_OVERLAP;
        return yOverlap && (distSq < minDist * minDist);
     } 
@@ -171,7 +165,7 @@ export class GeometryUtils {
           const distSq = (cx - clampedX) ** 2 + (cy - clampedY) ** 2;
           const zOverlap = this.checkIntervalOverlap(boxPos.z, boxDim.width, cylPos.z, cylDim.width);
           const minDist = radius - ALLOWED_OVERLAP;
-          return xOverlap && (distSq < minDist * minDist);
+          return zOverlap && (distSq < minDist * minDist);
       }
     }
   }
