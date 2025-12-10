@@ -22,7 +22,7 @@ export class RollStrategy implements IPackingStrategy {
   ): { position: IVector3; rotation: number; orientation: string; dimensions: IDimensions } | null {
     const { container, placedItems } = context;
     
-    // Boyutları Belirle
+    // 1. Determine Dimensions
     let rollDiameter = 0;
     let rollLength = 0;
 
@@ -44,15 +44,17 @@ export class RollStrategy implements IPackingStrategy {
 
     const orientations = this.getOrientations(rollDiameter, rollLength, item.isPalletized);
 
-    // Lattice (Petek) Noktalarını ve Standart Noktaları Oluştur
+    // 2. Generate Points (ONLY LATTICE - NO GRID FALLBACK)
+    // We are removing the safety net. It must pack hex or nothing.
     const candidatePoints = this.generateCandidatePoints(placedItems, container.dimensions, rollDiameter, rollLength);
 
+    // 3. Find Best Fit
     for (const point of candidatePoints) {
       for (const orient of orientations) {
         
-        // Petek noktalarını olduğu gibi dene, kaydırma yapma
-        if (point.type === 'lattice' || point.type === 'groove') {
-             if (this.canPlaceAt(item, point.position, orient, context)) {
+        // Use Lattice points AS IS.
+        if (point.type === 'lattice') {
+             if (this.canPlaceAt(null, point.position, orient, context)) {
                  return {
                    position: point.position,
                    rotation: orient.rotation,
@@ -60,62 +62,21 @@ export class RollStrategy implements IPackingStrategy {
                    dimensions: orient.dimensions
                  };
              }
-        } else {
-             // Standart noktaları kaydırarak dene
-             const finalPos = this.tryNudgePosition(item, point.position, orient, context);
-             if (finalPos) {
-                return {
-                  position: finalPos,
-                  rotation: orient.rotation,
-                  orientation: orient.orientation,
-                  dimensions: orient.dimensions
-                 };
-             }
-        }
+        } 
+        // Note: No Nudge logic needed because we only have lattice points now.
       }
     }
 
     return null;
   }
 
-  private tryNudgePosition(
-    item: ICargoItem,
-    startPos: IVector3,
-    orient: OrientationOption,
-    context: IPackingContext
-  ): IVector3 | null {
-    if (this.canPlaceAt(item, startPos, orient, context)) {
-      return this.optimizeCoordinate(item, startPos, orient, context);
-    }
-    return null;
-  }
-
-  private optimizeCoordinate(item: ICargoItem, pos: IVector3, orient: OrientationOption, context: IPackingContext): IVector3 {
-    let bestPos = { ...pos };
-    const step = 0.05; 
-    
-    while (bestPos.z - step >= 0) {
-      const testPos = { ...bestPos, z: bestPos.z - step };
-      if (this.canPlaceAt(item, testPos, orient, context)) bestPos = testPos;
-      else break; 
-    }
-    while (bestPos.x - step >= 0) {
-      const testPos = { ...bestPos, x: bestPos.x - step };
-      if (this.canPlaceAt(item, testPos, orient, context)) bestPos = testPos;
-      else break;
-    }
-    return bestPos;
-  }
-
   private getOrientations(diameter: number, length: number, isPalletized?: boolean): OrientationOption[] {
     const options: OrientationOption[] = [];
-    // Vertical
     options.push({
       dimensions: { length: diameter, width: diameter, height: length },
       rotation: 0,
       orientation: 'vertical'
     });
-    // Horizontal
     if (!isPalletized) {
       options.push({
         dimensions: { length: length, width: diameter, height: diameter },
@@ -141,67 +102,63 @@ export class RollStrategy implements IPackingStrategy {
     const pointSet = new Set<string>();
 
     const addPoint = (x: number, y: number, z: number, type: 'corner' | 'groove' | 'lattice') => {
+      // Safety bounds
       if (x < -0.01 || y < -0.01 || z < -0.01) return;
       if (x > containerDims.length || y > containerDims.height || z > containerDims.width) return;
 
       const key = `${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`;
       if (!pointSet.has(key)) {
         pointSet.add(key);
-        // Petek noktalarına (Lattice/Groove) çok yüksek öncelik ver
+        // Score logic: Standard sort.
         let score = (y * 10000) + (z * 100) + x;
-        if (type === 'lattice') score -= 2000000; 
-        if (type === 'groove') score -= 1000000;
-        
         points.push({ position: { x, y, z }, score, type });
       }
     };
 
-    // 1. ZORUNLU PETEK IZGARASI (Fixed Lattice)
-    this.generateLatticePoints(containerDims, currentDiameter, currentLength, addPoint);
+    // 1. GENERATE FORCED LATTICE ONLY
+    this.generateForcedLattice(containerDims, currentDiameter, currentLength, addPoint);
 
-    // 2. Dinamik Oyuklar (Grooves - Mevcut rulolara göre)
-    this.generateGroovePoints(placedItems, currentDiameter, addPoint);
-
-    // 3. Standart Köşeler (Grid - Yedek)
-    addPoint(0, 0, 0, 'corner');
-    for (const item of placedItems) {
-      const pos = item.position;
-      const dim = item.dimensions;
-      addPoint(pos.x + dim.length, pos.y, pos.z, 'corner'); 
-      addPoint(pos.x, pos.y, pos.z + dim.width, 'corner'); 
-      addPoint(pos.x, pos.y + dim.height, pos.z, 'corner'); 
-      addPoint(pos.x + dim.length, pos.y, pos.z + dim.width, 'corner'); 
-    }
+    // REMOVED: Standard Grid Corners.
+    // If we include them, the algorithm might greedily pick them.
+    // By removing them, we FORCE the algorithm to use the Hex/Lattice points.
 
     return points.sort((a, b) => a.score - b.score);
   }
 
-  private generateLatticePoints(
+  /**
+   * Generates 4 variations of Hex Lattices (Direction X/Z + Start Shifted/Normal).
+   */
+  private generateForcedLattice(
     container: IDimensions, 
     diameter: number, 
     length: number,
     addPoint: (x: number, y: number, z: number, type: 'lattice') => void
   ) {
     const radius = diameter / 2;
-    const hexStep = diameter * 0.8660254; // sin(60)*D
+    const hexStep = diameter * 0.8660254; 
     
-    // İki farklı deseni de dene (Normal ve Kaydırmalı)
-    for (let pattern = 0; pattern < 2; pattern++) {
-        // Z Ekseni boyunca satırlar
-        const zRows = Math.floor((container.width - diameter) / hexStep) + 2; 
+    // PATTERN SET 1: Rows along Z-Axis
+    for (let shiftStrategy = 0; shiftStrategy < 2; shiftStrategy++) {
+        
+        const zRows = Math.floor((container.width - diameter) / hexStep) + 3; 
         const xCols = Math.floor(container.length / diameter) + 2;
 
         for (let row = 0; row < zRows; row++) {
           const z = row * hexStep;
-          const isShifted = (row % 2 === 1);
-          let xOffset = isShifted ? radius : 0;
-          if (pattern === 1) xOffset = (xOffset === 0) ? radius : 0;
+          const isIndentedRow = (row % 2 === 1);
+          let xOffset = isIndentedRow ? radius : 0;
+          
+          if (shiftStrategy === 1) {
+              xOffset = (xOffset === 0) ? radius : 0;
+          }
 
           for (let col = 0; col < xCols; col++) {
             const x = (col * diameter) + xOffset;
-            addPoint(x, 0, z, 'lattice'); // Zemin
             
-            // Dikey Yığın (Columnar)
+            // Floor
+            addPoint(x, 0, z, 'lattice');
+            
+            // Stack
             let yStack = length;
             while (yStack < container.height) {
                addPoint(x, yStack, z, 'lattice');
@@ -210,42 +167,37 @@ export class RollStrategy implements IPackingStrategy {
           }
         }
     }
-  }
 
-  private generateGroovePoints(placedItems: IPlacedItem[], currentDiameter: number, addPoint: any) {
-      const rolls = placedItems.filter(i => i.item.type === 'roll');
-      const targetRadius = currentDiameter / 2;
-      const buffer = 0.001;
+    // PATTERN SET 2: Rows along X-Axis
+    for (let shiftStrategy = 0; shiftStrategy < 2; shiftStrategy++) {
+        const xRows = Math.floor((container.length - diameter) / hexStep) + 3;
+        const zCols = Math.floor((container.width / diameter) + 2);
 
-      for (let i = 0; i < rolls.length; i++) {
-        for (let j = i + 1; j < rolls.length; j++) {
-            const r1 = rolls[i];
-            const r2 = rolls[j];
-            if (r1.orientation !== r2.orientation) continue;
+        for (let row = 0; row < xRows; row++) {
+            const x = row * hexStep;
+            const isIndentedRow = (row % 2 === 1);
+            let zOffset = isIndentedRow ? radius : 0;
+            
+            if (shiftStrategy === 1) {
+                zOffset = (zOffset === 0) ? radius : 0;
+            }
 
-            // Sadece Vertical için örnek (Horizontal da benzer eklenebilir)
-            if (r1.orientation === 'vertical') {
-                if (Math.abs(r1.position.y - r2.position.y) < 0.1) {
-                    const rad1 = r1.dimensions.length/2;
-                    const rad2 = r2.dimensions.length/2;
-                    const c1 = {x: r1.position.x + rad1, z: r1.position.z + rad1};
-                    const c2 = {x: r2.position.x + rad2, z: r2.position.z + rad2};
-                    const dist = Math.sqrt((c1.x-c2.x)**2 + (c1.z-c2.z)**2);
-                    
-                    // İdeal petek mesafesi (birbirine değiyorlarsa veya çok yakınlarsa)
-                    if (dist < (rad1 + targetRadius + rad2 + targetRadius + buffer)) {
-                        // Basit orta nokta hesabı yerine üçgen kesişimi
-                        // ... (GeometryUtils calculateCircleIntersection mantığı buraya da eklenebilir)
-                        // Şimdilik sadece Lattice'in yeterli olacağını varsayıyoruz.
-                    }
+            for (let col = 0; col < zCols; col++) {
+                const z = (col * diameter) + zOffset;
+                addPoint(x, 0, z, 'lattice'); // Floor
+
+                let yStack = length;
+                while (yStack < container.height) {
+                    addPoint(x, yStack, z, 'lattice');
+                    yStack += length;
                 }
             }
         }
-      }
+    }
   }
 
   canPlaceAt(
-    item: ICargoItem, 
+    item: ICargoItem | null,
     pos: IVector3, 
     orient: OrientationOption,
     context: IPackingContext
@@ -254,10 +206,8 @@ export class RollStrategy implements IPackingStrategy {
     const dimensions = orient.dimensions;
     const orientationType = orient.orientation;
 
-    // 1. Sınır Kontrolü
     if (!GeometryUtils.isWithinBounds(pos, dimensions, container.dimensions)) return false;
 
-    // 2. Çarpışma Kontrolü (AABB Bypass edilmiş hali)
     for (const other of placedItems) {
       if (GeometryUtils.checkIntersection(
           pos, dimensions, 
@@ -269,16 +219,15 @@ export class RollStrategy implements IPackingStrategy {
       }
     }
 
-    // 3. Destek Kontrolü (HAVA KORKUSU DÜZELTİLDİ)
     if (pos.y > 0.01) {
-      // "Bridge Support" (Köprü Desteği) mantığı devreye giriyor.
-      // Altındaki alan boş olsa bile, iki rulo üstünde duruyorsa geçerlidir.
       if (!this.hasSufficientSupport(pos, dimensions, orientationType, placedItems)) return false;
       
       if (orientationType === 'vertical') {
         const supportingItems = this.getSupportingItems(pos, dimensions, placedItems);
         for (const support of supportingItems) {
-          if (support.item.type === 'roll' && support.orientation === 'horizontal') return false;
+          if (support.item.type === 'roll' && support.orientation === 'horizontal') {
+             return false;
+          }
         }
       }
     }
@@ -288,14 +237,12 @@ export class RollStrategy implements IPackingStrategy {
 
   private getSupportingItems(pos: IVector3, dims: IDimensions, placedItems: IPlacedItem[]): IPlacedItem[] {
     const supports: IPlacedItem[] = [];
-    const epsilon = 0.05; 
+    const epsilon = 0.05;
     const bottomY = pos.y;
 
     for (const item of placedItems) {
       const itemTop = item.position.y + item.dimensions.height;
       if (Math.abs(itemTop - bottomY) < epsilon) {
-          // Burada AABB kontrolü yapıyoruz ama sadece "adayları" bulmak için.
-          // Gerçek destek "hasSufficientSupport" içinde hesaplanacak.
           if (GeometryUtils.checkAABBIntersection(
               { x: pos.x - epsilon, y: 0, z: pos.z - epsilon }, 
               { length: dims.length + epsilon*2, width: dims.width + epsilon*2, height: 1 },
@@ -318,7 +265,6 @@ export class RollStrategy implements IPackingStrategy {
     const supportingItems = this.getSupportingItems(pos, dims, placedItems);
     if (supportingItems.length === 0) return false;
 
-    // Kutu üzerindeyse -> Alan hesabı
     const isSittingOnBox = supportingItems.some(i => i.item.type !== 'roll');
     if (isSittingOnBox) {
         let supportedArea = 0;
@@ -331,10 +277,6 @@ export class RollStrategy implements IPackingStrategy {
         return (supportedArea / itemArea) > 0.5;
     }
 
-    // Rulo üzerindeyse -> TEMAS NOKTASI SAYISI (Bridge Support Logic)
-    // Alan hesabı YAPMIYORUZ. Çünkü petek dizilimde temas alanı neredeyse sıfırdır (çizgi temas).
-    // Bunun yerine "En az 2 noktadan destek alıyor mu?" veya "1 rulo üstünde tam dengede mi?" diye bakıyoruz.
-    
     let contactCount = 0;
     const myRadius = (orientation === 'vertical' ? dims.length : dims.height) / 2;
     
@@ -364,17 +306,12 @@ export class RollStrategy implements IPackingStrategy {
             const dist = Math.sqrt((myCenter.a - supportCenter.a)**2 + (myCenter.b - supportCenter.b)**2);
             const optimalDist = myRadius + supportRadius;
             
-            // Toleranslı Mesafe Kontrolü: 
-            // Eğer merkezler arası mesafe, yarıçaplar toplamına yakınsa (veya biraz azsa, iç içe geçmişse) temastadır.
-            // 0.25 (25cm) tolerans veriyoruz ki hafif kaymalarda bile desteği görsün.
             if (Math.abs(dist - optimalDist) < 0.25) {
                 contactCount++;
             }
         }
     }
 
-    // 1 temas noktası bile varsa (üst üste kule veya yan destek) kabul et.
-    // Petek yapıda genelde 2 temas olur ama kenarlarda 1 olabilir.
     return contactCount >= 1;
   }
 }
