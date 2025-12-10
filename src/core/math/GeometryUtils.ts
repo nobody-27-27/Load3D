@@ -3,13 +3,6 @@ import type { IVector3, IDimensions, RollOrientation } from '../types';
 export class GeometryUtils {
   private static readonly EPSILON = 0.001;
 
-  /**
-   * Checks generic intersection.
-   * STRICT ORDER: 
-   * 1. Roll-Roll (Cylinder Math) -> Bypasses AABB checks entirely.
-   * 2. AABB Check (Optimization for boxes)
-   * 3. Box checks
-   */
   static checkIntersection(
     pos1: IVector3,
     dim1: IDimensions,
@@ -21,24 +14,23 @@ export class GeometryUtils {
     orientation2: RollOrientation = 'vertical'
   ): boolean {
     
-    // 1. KRİTİK ÖNCELİK: RULO vs RULO
-    // Petek dizilimde kutu sınırları (AABB) kesinlikle çakışır. 
-    // Bu yüzden kutu kontrolünü atlayıp doğrudan silindir mesafesine bakmalıyız.
+    // 1. ÖNCELİKLİ: RULO - RULO
+    // AABB (Kutu) kontrolünü atla. Sadece mesafe hesabı yap.
     if (item1Type === 'roll' && item2Type === 'roll') {
       return this.checkCylinderCylinderIntersection(pos1, dim1, orientation1, pos2, dim2, orientation2);
     }
 
-    // 2. Standart AABB Kontrolü (Diğerleri için performans)
+    // 2. AABB (Kutu Sınırları) Kontrolü
     if (!this.checkAABBIntersection(pos1, dim1, pos2, dim2)) {
       return false;
     }
 
-    // 3. Kutu vs Kutu
+    // 3. Kutu - Kutu
     if (item1Type === 'box' && item2Type === 'box') {
       return true; 
     }
 
-    // 4. Karışık Kontroller
+    // 4. Karışık
     if (item1Type === 'roll' && item2Type !== 'roll') {
       return this.checkBoxCylinderIntersection(pos2, dim2, pos1, dim1, orientation1);
     }
@@ -83,8 +75,6 @@ export class GeometryUtils {
     );
   }
 
-  // --- PRIVATE MATH ---
-
   private static checkCylinderCylinderIntersection(
     pos1: IVector3,
     dim1: IDimensions,
@@ -93,7 +83,7 @@ export class GeometryUtils {
     dim2: IDimensions,
     orient2: RollOrientation
   ): boolean {
-    // TOLERANS: 5mm. Petek yapının sıkışmasına izin ver.
+    // 5mm tolerans
     const ALLOWED_OVERLAP = 0.005; 
 
     if (orient1 === orient2) {
@@ -111,7 +101,7 @@ export class GeometryUtils {
         return distSq < minAllowedDist * minAllowedDist;
       } 
       else {
-        // Horizontal
+        // Horizontal logic
         const isX1 = dim1.length > dim1.width;
         const isX2 = dim2.length > dim2.width;
 
@@ -126,11 +116,11 @@ export class GeometryUtils {
            const r2 = dim2.height / 2;
            
            let distSq = 0;
-           if (isX1) { // Y-Z Düzlemi
+           if (isX1) { 
              const c1y = pos1.y + r1; const c1z = pos1.z + r1;
              const c2y = pos2.y + r2; const c2z = pos2.z + r2;
              distSq = (c1y - c2y) ** 2 + (c1z - c2z) ** 2;
-           } else { // X-Y Düzlemi
+           } else { 
              const c1x = pos1.x + r1; const c1y = pos1.y + r1;
              const c2x = pos2.x + r2; const c2y = pos2.y + r2;
              distSq = (c1x - c2x) ** 2 + (c1y - c2y) ** 2;
@@ -165,7 +155,7 @@ export class GeometryUtils {
        return yOverlap && (distSq < minDist * minDist);
     } 
     else {
-      // Horizontal
+      // Horizontal logic...
       const isXAxis = cylDim.length > cylDim.width;
       if (isXAxis) {
           const cy = cylPos.y + radius; const cz = cylPos.z + radius;
