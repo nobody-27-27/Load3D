@@ -43,6 +43,7 @@ export class PackingEngine {
     }
   }
 
+  // ... (ensurePalletDimensions metodu AYNEN KALIYOR) ...
   private ensurePalletDimensions(item: ICargoItem): ICargoItem {
     if (item.isPalletized && !item.palletDimensions) {
       if (item.dimensions) {
@@ -104,8 +105,13 @@ export class PackingEngine {
 
     for (const group of itemGroups) {
       const isPalletizedGroup = group.items[0].isPalletized;
+      // Pattern Packing şartlarını gevşetiyoruz veya Roll için özel kontrol ekliyoruz
       const shouldUsePatternPacking = this.config.enablePatternPacking &&
-        (group.items[0].type === 'pallet' || group.items[0].type === 'box') &&
+        (
+            group.items[0].type === 'pallet' || 
+            group.items[0].type === 'box' ||
+            group.items[0].type === 'roll' // ARTIK RULOLARI DA KABUL EDİYORUZ
+        ) &&
         (isPalletizedGroup || group.items.length >= this.config.minItemsForPatterns);
 
       if (shouldUsePatternPacking) {
@@ -206,12 +212,22 @@ export class PackingEngine {
         container,
         this.config.maxPatternGenerationTime
       );
+    } 
+    // YENİ EKLENEN RULO KONTROLÜ
+    else if (itemType === 'roll') {
+      evaluation = PatternEvaluator.evaluateRollPatterns(
+        items,
+        container,
+        this.config.maxPatternGenerationTime
+      );
     }
 
     if (!evaluation || evaluation.slots.length === 0) {
       return { placed: [], remaining: items };
     }
 
+    // PrecisePlacer zaten slotları aldığı için özel bir Rulo metoduna gerek yok, 
+    // slotların içinde position, rotation ve dimensions doğru geldiği sürece çalışır.
     return PrecisePlacer.placeItemsFromSlots(
       items,
       evaluation.slots,
