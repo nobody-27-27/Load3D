@@ -5,6 +5,7 @@ import { PalletStrategy } from '../strategies/PalletStrategy';
 import type { IPackingStrategy } from '../strategies/IPackingStrategy';
 import { PatternEvaluator } from '../math/PatternEvaluator';
 import { PrecisePlacer } from '../math/PrecisePlacer';
+import { calculateCoilLoading } from '../../utils/packingAlgorithm';
 
 export interface IPackingConfig {
   enablePatternPacking: boolean;
@@ -198,6 +199,58 @@ export class PackingEngine {
     const itemType = items[0].type;
     const isPalletized = items[0].isPalletized;
 
+    // --- ÖZEL RULO ALGORİTMASI ENTEGRASYONU (BURASI YENİ) ---
+    if (itemType === 'roll') {
+      const firstItem = items[0];
+      // Eğer rulo boyutları tanımlı değilse güvenli çıkış yap
+      if (!firstItem.rollDimensions) return { placed: [], remaining: items };
+
+      // 1. Bizim yazdığımız "calculateCoilLoading" fonksiyonunu çağır
+      // Not: Store'dan gelen veriler genelde metredir, algoritma birimsiz çalışır (oranlara bakar).
+      const algoResult = calculateCoilLoading(
+        {
+          width: container.dimensions.width,
+          height: container.dimensions.height,
+          length: container.dimensions.length
+        },
+        {
+          id: firstItem.id,
+          diameter: firstItem.rollDimensions.diameter,
+          length: firstItem.rollDimensions.length,
+          quantity: items.length
+        }
+      );
+
+      // 2. Çıkan sonucu Engine'in anlayacağı formata çevir (Mapping)
+      const placed: IPlacedItem[] = [];
+      
+      // Algoritmanın yerleştirdiği her parça için orijinal listeden bir item alıp eşleştiriyoruz
+      algoResult.placed.forEach((p, index) => {
+        if (index < items.length) {
+          const originalItem = items[index];
+          placed.push({
+            itemId: originalItem.id,
+            item: originalItem,
+            position: p.position,
+            rotation: p.rotation,
+            dimensions: { // Görselleştirme için boyutlar
+               length: firstItem.rollDimensions!.diameter,
+               width: firstItem.rollDimensions!.diameter,
+               height: firstItem.rollDimensions!.length
+            },
+            orientation: 'horizontal' // Ruloları yatık varsaydık
+          });
+        }
+      });
+
+      // 3. Yerleşemeyenleri ayır
+      const remaining = items.slice(placed.length);
+
+      return { placed, remaining };
+    }
+    // --- RULO BİTİŞ ---
+
+    // Diğer tipler (Kutu, Palet) için eski mantık devam eder
     let evaluation = null;
 
     if (itemType === 'pallet' || (itemType === 'box' && isPalletized)) {
@@ -213,21 +266,11 @@ export class PackingEngine {
         this.config.maxPatternGenerationTime
       );
     } 
-    // YENİ EKLENEN RULO KONTROLÜ
-    else if (itemType === 'roll') {
-      evaluation = PatternEvaluator.evaluateRollPatterns(
-        items,
-        container,
-        this.config.maxPatternGenerationTime
-      );
-    }
 
     if (!evaluation || evaluation.slots.length === 0) {
       return { placed: [], remaining: items };
     }
 
-    // PrecisePlacer zaten slotları aldığı için özel bir Rulo metoduna gerek yok, 
-    // slotların içinde position, rotation ve dimensions doğru geldiği sürece çalışır.
     return PrecisePlacer.placeItemsFromSlots(
       items,
       evaluation.slots,
