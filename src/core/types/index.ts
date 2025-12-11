@@ -93,3 +93,17 @@ export interface IPackingContext {
   placedItems: IPlacedItem[];
   activeLayer: IActiveLayer;
 }
+export interface IMetrics {
+  usedVolume: number;
+  totalVolume: number;
+  utilizationPercentage: number;
+  placedCount: number;
+  unplacedCount: number;
+}
+
+export interface IPackingResult {
+  containerId: string;
+  placedItems: IPlacedItem[];
+  unplacedItems: ICargoItem[];
+  metrics: IMetrics;
+}
