@@ -11,15 +11,19 @@ export interface ILayoutPattern {
   totalItems: number;
   utilizationScore: number;
   orientation: IDimensions;
+  // Rulo için özel etiketler (Opsiyonel olarak eklenip pattern tipini ayırt etmemizi sağlar)
+  patternType?: 'box' | 'vertical-honeycomb' | 'horizontal-honeycomb' | 'hybrid'; 
 }
 
 export interface IPlacementSlot {
   position: IVector3;
   dimensions: IDimensions;
   rotation: number;
+  orientation?: 'vertical' | 'horizontal'; // Rulo için eklendi
 }
 
 export class PatternGenerator {
+  // ... (Mevcut generatePalletPatterns ve generateBoxPatterns metodları AYNEN KALIYOR) ...
   static generatePalletPatterns(
     itemDims: IDimensions,
     palletDims: IDimensions | undefined,
@@ -90,7 +94,7 @@ export class PatternGenerator {
           rows,
           totalItems,
           utilizationScore: utilization,
-          orientation: orientation
+          orientation: baseDims
         });
       }
     }
@@ -157,8 +161,6 @@ export class PatternGenerator {
 
       for (const config of configs) {
         const rows: IRowPattern[] = [];
-        // For back-to-front filling: itemsPerRow represents positions across container WIDTH
-        // not positions along container LENGTH
         const itemsPerRowL = Math.floor(containerDims.width / lengthOriented.itemWidth);
         const itemsPerRowW = Math.floor(containerDims.width / widthOriented.itemWidth);
 
@@ -197,7 +199,8 @@ export class PatternGenerator {
           rows,
           totalItems,
           utilizationScore: utilization,
-          orientation: orientation
+          orientation: orientation,
+          patternType: 'box'
         });
       }
     }
@@ -212,6 +215,7 @@ export class PatternGenerator {
     return patterns.slice(0, 10);
   }
 
+  // ... (Mevcut generatePlacementSlots ve getAllOrientations metodları AYNEN KALIYOR) ...
   static generatePlacementSlots(
     pattern: ILayoutPattern,
     itemDims: IDimensions,
@@ -225,20 +229,17 @@ export class PatternGenerator {
 
     const maxLayers = isPalletized ? 1 : Math.floor(containerDims.height / baseDims.height);
 
-    // Calculate depth positions based on first row dimensions
     if (pattern.rows.length === 0) return slots;
 
     const firstRow = pattern.rows[0];
     const depthIncrement = firstRow.itemOrientation === 'length' ? baseDims.length : baseDims.width;
     const maxDepthPositions = Math.floor(containerDims.length / depthIncrement);
 
-    // For back-to-front filling, calculate how many items fit across the width
     const itemWidth = firstRow.itemOrientation === 'length' ? baseDims.width : baseDims.length;
     const itemLength = firstRow.itemOrientation === 'length' ? baseDims.length : baseDims.width;
     const itemRotation = firstRow.itemOrientation === 'length' ? 0 : 90;
     const widthPositions = Math.floor(containerDims.width / itemWidth);
 
-    // Back-to-front filling: iterate depth (X) first, then height (Y), then width (Z)
     for (let depthPos = 0; depthPos < maxDepthPositions; depthPos++) {
       const x = depthPos * depthIncrement;
 
@@ -249,7 +250,6 @@ export class PatternGenerator {
 
         if (y + baseDims.height > containerDims.height + 0.01) break;
 
-        // Place items across the width at this depth and layer
         for (let widthPos = 0; widthPos < widthPositions; widthPos++) {
           const z = widthPos * itemWidth;
 
@@ -288,5 +288,196 @@ export class PatternGenerator {
       seen.add(key);
       return true;
     });
+  }
+
+  // ==========================================
+  // YENİ EKLENEN RULO (ROLL) MANTIĞI
+  // ==========================================
+
+  static generateRollPatterns(
+    diameter: number,
+    length: number,
+    containerDims: IDimensions
+  ): ILayoutPattern[] {
+    const patterns: ILayoutPattern[] = [];
+
+    // Senaryo 1: Sadece Dikey (Vertical) - Honeycomb (Petek)
+    // Eğer rulo dik sığmıyorsa bu senaryo otomatik elenir.
+    if (length <= containerDims.height) {
+        const slotsV = this.calculateHoneycombSlots(containerDims, diameter, length, 'vertical');
+        patterns.push({
+            rows: [], // Ruloda row mantığı karmaşık, slots üzerinden gidiyoruz
+            totalItems: slotsV.length,
+            utilizationScore: this.calcUtilization(slotsV, diameter, length, containerDims),
+            orientation: { length: diameter, width: diameter, height: length },
+            patternType: 'vertical-honeycomb'
+        });
+    }
+
+    // Senaryo 2: Sadece Yatay (Horizontal) - Log Stacking (Oluklu İstif)
+    // Z eksenine paralel yatırma
+    if (length <= containerDims.length) {
+        const slotsHZ = this.calculateHoneycombSlots(containerDims, diameter, length, 'horizontal-z');
+        patterns.push({
+            rows: [],
+            totalItems: slotsHZ.length,
+            utilizationScore: this.calcUtilization(slotsHZ, diameter, length, containerDims),
+            orientation: { length: length, width: diameter, height: diameter },
+            patternType: 'horizontal-honeycomb'
+        });
+    }
+
+    // Senaryo 3: Hibrit (Hybrid) - Dik Zemin + Yatay Tavan
+    // Önce zemini dik doldur, kalan yüksekliğe yatay at.
+    if (length <= containerDims.height) {
+        const slotsBase = this.calculateHoneycombSlots(containerDims, diameter, length, 'vertical');
+        const remainingHeight = containerDims.height - length;
+        
+        // Eğer tepede en az 1 sıra yatay rulo sığacak yer varsa
+        if (remainingHeight >= diameter) {
+            // Tavan için sanal bir konteyner oluştur (sadece Y ekseni farklı)
+            const topContainer = { ...containerDims, height: remainingHeight };
+            // Yatayları bu boşluğa doldur, ama Y pozisyonlarını yukarı ötele
+            const slotsTop = this.calculateHoneycombSlots(topContainer, diameter, length, 'horizontal-z')
+                .map(s => ({
+                    ...s,
+                    position: { ...s.position, y: s.position.y + length }
+                }));
+            
+            const totalSlots = [...slotsBase, ...slotsTop];
+            patterns.push({
+                rows: [],
+                totalItems: totalSlots.length,
+                utilizationScore: this.calcUtilization(totalSlots, diameter, length, containerDims),
+                orientation: { length: diameter, width: diameter, height: length },
+                patternType: 'hybrid'
+            });
+        }
+    }
+
+    // En çok ürün alanı en başa al
+    return patterns.sort((a, b) => b.totalItems - a.totalItems);
+  }
+
+  // Rulo Yerleşim Slotlarını Hesaplayan "Akıllı Petek" Fonksiyonu
+  static generateRollPlacementSlots(
+    pattern: ILayoutPattern,
+    diameter: number,
+    length: number,
+    containerDims: IDimensions
+  ): IPlacementSlot[] {
+      // Pattern tipine göre yeniden hesapla veya önbelleklenmiş datayı kullan
+      // Burada dinamik olarak tekrar hesaplıyoruz:
+      
+      if (pattern.patternType === 'vertical-honeycomb') {
+          return this.calculateHoneycombSlots(containerDims, diameter, length, 'vertical');
+      } 
+      else if (pattern.patternType === 'horizontal-honeycomb') {
+           // Yatayda hem Z'ye hem X'e hizalıyı deneyip en iyisini seçebiliriz ama şimdilik Z (standart)
+           return this.calculateHoneycombSlots(containerDims, diameter, length, 'horizontal-z');
+      }
+      else if (pattern.patternType === 'hybrid') {
+          const slotsBase = this.calculateHoneycombSlots(containerDims, diameter, length, 'vertical');
+          const remainingHeight = containerDims.height - length;
+          if (remainingHeight >= diameter) {
+               const topContainer = { ...containerDims, height: remainingHeight };
+               const slotsTop = this.calculateHoneycombSlots(topContainer, diameter, length, 'horizontal-z')
+                .map(s => ({
+                    ...s,
+                    position: { ...s.position, y: s.position.y + length }
+                }));
+               return [...slotsBase, ...slotsTop];
+          }
+          return slotsBase;
+      }
+      return [];
+  }
+
+  private static calculateHoneycombSlots(
+      container: IDimensions, 
+      d: number, 
+      l: number, 
+      mode: 'vertical' | 'horizontal-z'
+  ): IPlacementSlot[] {
+      const slots: IPlacementSlot[] = [];
+      const r = d / 2;
+      const hexStep = d * 0.8660254; // sin(60) * d -> Katlar arası yükseklik/mesafe
+
+      if (mode === 'vertical') {
+          // X-Z düzleminde petek döşeme
+          const colsX = Math.floor((container.length - (d - hexStep)) / hexStep); 
+          // Not: İlk sıra tam çap kaplar, sonrakiler sıkışır. Basit hesap:
+          
+          let rowCountZ = 0;
+          let zPos = 0;
+          
+          while (zPos + d <= container.width + 0.01) {
+              const isOffsetRow = rowCountZ % 2 === 1;
+              const xStart = isOffsetRow ? d : r; // Offsetli sıra r kadar içerden başlar (veya d)
+              // Burada sıkıştırma mantığı:
+              // X ekseninde düz dizelim, Z ekseninde zig zag yapalım (veya tam tersi)
+              
+              // Basit Petek: 
+              // Sıra 1 (Z=0): O O O O
+              // Sıra 2 (Z=0.86d):  O O O
+              
+              let xPos = isOffsetRow ? (r + 0.01) : 0;
+              while (xPos + d <= container.length + 0.01) {
+                  slots.push({
+                      position: { x: xPos, y: 0, z: zPos },
+                      dimensions: { length: d, width: d, height: l }, // Kapladığı alan (Bounding Box)
+                      rotation: 0,
+                      orientation: 'vertical'
+                  });
+                  xPos += d; // Yan yana bitişik
+              }
+              
+              zPos += hexStep; // Bir sonraki sıra "oluğa" girer
+              rowCountZ++;
+          }
+          
+      } else if (mode === 'horizontal-z') {
+          // Y-X düzleminde üst üste istifleme (Tomruk gibi)
+          // Rulolar Z eksenine paralel uzanır.
+          
+          let layerY = 0;
+          let layerIndex = 0;
+          
+          while (layerY + d <= container.height + 0.01) {
+              const isOffsetLayer = layerIndex % 2 === 1;
+              let xPos = isOffsetLayer ? r : 0;
+              
+              while (xPos + d <= container.length + 0.01) {
+                  // Z ekseni boyunca kaç tane sığar? (Arka arkaya değil, tek parça uzunsa)
+                  // Eğer rulo boyu (l) konteyner genişliğinden (width) küçükse, arka arkaya da dizebiliriz.
+                  // Şimdilik boydan boya tek sıra kabul edelim veya Grid döşeyelim.
+                  
+                  let zPos = 0;
+                  while(zPos + l <= container.width + 0.01) {
+                      slots.push({
+                          position: { x: xPos, y: layerY, z: zPos },
+                          dimensions: { length: d, width: l, height: d }, // Yatik
+                          rotation: 90, // Z eksenine paralel
+                          orientation: 'horizontal'
+                      });
+                      zPos += l;
+                  }
+                  
+                  xPos += d;
+              }
+              
+              layerY += hexStep; // Üst kat oluğa oturur
+              layerIndex++;
+          }
+      }
+
+      return slots;
+  }
+
+  private static calcUtilization(slots: IPlacementSlot[], d: number, l: number, c: IDimensions): number {
+      const volItem = Math.PI * (d/2)**2 * l;
+      const volTotal = slots.length * volItem;
+      const volCont = c.length * c.width * c.height;
+      return (volTotal / volCont) * 100;
   }
 }
